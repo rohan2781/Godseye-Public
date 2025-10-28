@@ -26,9 +26,15 @@ SECRET_KEY = 'django-insecure-0asp7^cn87h!fwlde$&385=i!av=i$7&a6kdtr28l+ldi6(+fr
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+    'godseye-aeyq.onrender.com',
+]
 
 
+# CSRF trusted origins (important for POST forms)
+CSRF_TRUSTED_ORIGINS = [
+    'https://godseye-aeyq.onrender.com',
+]
 # Application definition
 
 INSTALLED_APPS = [
