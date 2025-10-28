@@ -1,0 +1,3 @@
+,Instrument,Expiry,Strike,Type,Quantity,LTP,Token,Exchange,SquareOff
+1,SENSEX,30OCT2025,85000,CE,-460,0,861780,BSEFO,"<form method=""POST""><button type=""submit""><a href=""{% url 'squareoff' id='861780_IFTIKHAR_JAINAM' %}"": target=""_blank"">Squareoff</a></button></form>"
+0,SENSEX,30OCT2025,89000,CE,460,0,861962,BSEFO,"<form method=""POST""><button type=""submit""><a href=""{% url 'squareoff' id='861962_IFTIKHAR_JAINAM' %}"": target=""_blank"">Squareoff</a></button></form>"

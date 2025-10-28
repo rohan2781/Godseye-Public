@@ -1,0 +1,157 @@
+kite = KiteConnect(api_key="")
+    kite_instruments = kite.instruments("NFO")
+    kite_instruments = pd.DataFrame(kite_instruments)
+    kite_instruments = kite_instruments[kite_instruments["segment"] == "NFO-OPT"]
+    kite_instruments["expiry"] = pd.to_datetime(kite_instruments["expiry"]).dt.date
+    bfo_instruments = kite.instruments("BFO")
+    bfo_instruments = pd.DataFrame(bfo_instruments)
+    bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
+    bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
+    bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+    bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
+    experies={}
+    sensex_experies = sorted(list(bfo_instruments["expiry"].unique()))
+    sensex_experies=sensex_experies[:3]
+    sensex_experies_str = [d.strftime("%Y-%m-%d") for d in sensex_experies]
+
+    for key in masterclass_dict:
+        if 'jainam' in key.lower():
+            continue
+        nfo = masterclass_dict[key].contracts["NFO"]
+        nifty_data = nfo[nfo["symbol"].str.startswith("NIFTY")]
+        banknifty_data = nfo[nfo["symbol"].str.contains("BANKNIFTY")]
+        nifty_expiries = sorted(list(nifty_data["expiry"].unique()))
+        banknifty_expiries = sorted(list(banknifty_data["expiry"].unique()))
+        today = datetime.today().date()
+        nifty_expiries = [datetime.fromtimestamp(ts).date() for ts in nifty_expiries if datetime.fromtimestamp(ts).date() >= today]
+        nifty_expiries=nifty_expiries[:3]
+        nifty_expiries_str = [d.strftime("%Y-%m-%d") for d in nifty_expiries]
+        banknifty_expiries = [datetime.fromtimestamp(ts).date() for ts in banknifty_expiries if datetime.fromtimestamp(ts).date() >= today]
+        banknifty_expiries = banknifty_expiries[:3]
+        banknifty_expiries_str = [d.strftime("%Y-%m-%d") for d in banknifty_expiries]
+        experies ["BANKNIFTY"]= banknifty_expiries_str
+        experies["NIFTY"]= nifty_expiries_str
+        experies["SENSEX"]= sensex_experies_str
+        break
+    pnl=pd.DataFrame(columns=[
+        'Name','Instrument','Expiry','PNL'
+    ])
+    for key in masterclass_dict:    
+        if 'jainam' in key.lower():
+            user_id = jainam_user_ids[key]
+            positions = masterclass_dict[key].get_order_book(user_id)['result']
+            df=pd.DataFrame(positions)
+            df=df[df['OrderStatus'] == 'Filled']
+            df['Instrument']=df['TradingSymbol'].str.split().str[0]
+            df['Expiry'] = df['TradingSymbol'].str.split().str[1]
+            df['Expiry'] = pd.to_datetime(df['Expiry']).dt.strftime("%Y-%m-%d")
+
+            
+            nifty_df = df[df['Instrument'] == 'NIFTY']
+            nifty_df = df[df['Expiry'].isin(pd.to_datetime(experies['NIFTY']).strftime("%Y-%m-%d").tolist())]
+            nifty_df['Value'] = nifty_df['OrderQuantity'] * nifty_df['OrderPrice']
+            grouped = nifty_df.groupby(['Expiry', 'OrderSide'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            nifty_pnl = grouped.reset_index()
+            nifty_pnl['Name']=key
+            nifty_pnl['Instrument']='NIFTY'
+            pnl = pd.concat([pnl, nifty_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+
+            banknifty_df = df[df['Instrument'] == 'BANKNIFTY']
+            banknifty_df = df[df['Expiry'].isin(pd.to_datetime(experies['BANKNIFTY']).strftime("%Y-%m-%d").tolist())]
+            banknifty_df['Value'] = banknifty_df['OrderQuantity'] * banknifty_df['OrderPrice']
+            grouped = banknifty_df.groupby(['Expiry', 'OrderSide'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            banknifty_pnl = grouped.reset_index()
+            banknifty_pnl['Name']=key
+            banknifty_pnl['Instrument']='BANKNIFTY'
+            pnl = pd.concat([pnl, banknifty_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+
+            sensex_df = df[df['Instrument'] == 'SENSEX']
+            sensex_df = df[df['Expiry'].isin(pd.to_datetime(experies['SENSEX']).strftime("%Y-%m-%d").tolist())]
+            sensex_df['Value'] = sensex_df['OrderQuantity'] * sensex_df['OrderPrice']
+            grouped = sensex_df.groupby(['Expiry', 'OrderSide'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            sensex_pnl = grouped.reset_index()
+            sensex_pnl['Name']=key
+            sensex_pnl['Instrument']='SENSEX'
+            pnl = pd.concat([pnl, sensex_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+            continue
+        df=masterclass_dict[key].get_orders('completed')
+        data = pd.concat([
+            bfo_instruments[bfo_instruments['exchange_token'].isin(df['instrument_token'])],
+            kite_instruments[kite_instruments['exchange_token'].isin(df['instrument_token'])]
+        ], ignore_index=True)
+        df = df.merge(
+            data[['exchange_token', 'name', 'expiry']],
+            left_on='instrument_token',
+            right_on='exchange_token',
+            how='left'
+        )
+        df.drop(columns=['exchange_token'], inplace=True)
+        df.rename(columns={'name': 'Instrument', 'expiry': 'Expiry'}, inplace=True)
+        df['Expiry']=pd.to_datetime(df['Expiry']).dt.strftime("%Y-%m-%d")
+        df['price']= pd.to_numeric(df['price'], errors='coerce')  # invalid parsing becomes NaN
+        df['quantity']= pd.to_numeric(df['quantity'], errors='coerce')  # invalid parsing becomes NaN
+
+        
+        nifty_df = df[df['Instrument'] == 'NIFTY']
+        nifty_df = df[df['Expiry'].isin(pd.to_datetime(experies['NIFTY']).strftime("%Y-%m-%d").tolist())]
+        if not nifty_df.empty:
+            nifty_df['Value'] = nifty_df['quantity'] * nifty_df['price']
+            grouped = nifty_df.groupby(['Expiry', 'order_side'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            nifty_pnl = grouped.reset_index()
+            nifty_pnl['Name']=key
+            nifty_pnl['Instrument']='NIFTY'
+            pnl = pd.concat([pnl, nifty_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+
+        banknifty_df = df[df['Instrument'] == 'BANKNIFTY']
+        banknifty_df = df[df['Expiry'].isin(pd.to_datetime(experies['BANKNIFTY']).strftime("%Y-%m-%d").tolist())]
+        if not banknifty_df.empty:
+            banknifty_df['Value'] = banknifty_df['quantity'] * banknifty_df['price']
+            grouped = banknifty_df.groupby(['Expiry', 'order_side'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            banknifty_pnl = grouped.reset_index()
+            banknifty_pnl['Name']=key
+            banknifty_pnl['Instrument']='BANKNIFTY'
+            pnl = pd.concat([pnl, banknifty_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+
+        sensex_df = df[df['Instrument'] == 'SENSEX']
+        sensex_df = df[df['Expiry'].isin(pd.to_datetime(experies['SENSEX']).strftime("%Y-%m-%d").tolist())]
+        if not sensex_df.empty:
+            sensex_df['Value'] = sensex_df['quantity'] * sensex_df['price']
+            grouped = sensex_df.groupby(['Expiry', 'order_side'])['Value'].sum().unstack(fill_value=0)
+            grouped['PNL'] = grouped['BUY'] - grouped['SELL']
+            # grouped['PNL'] = grouped.get('BUY', 0) - grouped.get('SELL', 0)
+            sensex_pnl = grouped.reset_index()
+            sensex_pnl['Name']=key
+            sensex_pnl['Instrument']='SENSEX'
+            pnl = pd.concat([pnl, sensex_pnl[['Name', 'Instrument', 'Expiry', 'PNL']]], ignore_index=True)
+
+    pnl.to_csv(r'D:\Ayussh\godseye\jainam\PNL.csv')
+    return HttpResponse('PNL')
+        #     for pos1 in positions:
+        #         if int(pos1["Quantity"]) == 0:
+        #             continue
+        #         pos = {}
+        #         # print(pos1)
+                
+        #         pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
+        #         try:
+        #             pos["Expiry"] = pos1["TradingSymbol"].split(" ")[1]
+        #         except Exception as e:
+        #             print(e)
+        #             pos["Expiry"] = 0
+        #         try:
+        #             pos["Strike"] = pos1["TradingSymbol"].split(" ")[3]
+        #             pos["Type"] = pos1["TradingSymbol"].split(" ")[2]
+        #         except Exception as e:
+        #             pos['Strike'] = 0
+        #             pos["Type"] = 'F'
+                
+        #         pos["Quantity"] = pos1["Quantity"]
+        #         pos["LTP"] = 0
+        #         pos["PNL"] = 0
+        #     continue
+        # df = masterclass_dict[key].get_positions()

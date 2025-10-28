@@ -1,0 +1,6 @@
+{% for account, table_html in rows %}
+  <div class="account-card">
+    <div class="account-title">{{ account }}</div>
+    {{ table_html|safe }}
+  </div>
+{% endfor %}

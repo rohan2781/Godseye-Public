@@ -1,0 +1,7 @@
+django
+pandas
+kiteconnect
+selenium
+onetimepass
+requests_oauthlib
+openpyxl
