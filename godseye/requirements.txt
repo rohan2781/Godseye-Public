@@ -1,7 +1,7 @@
-Django
-pandas
-kiteconnect
-selenium
-onetimepass
-requests-oauthlib
-openpyxl
+Django==4.2.7
+pandas==2.1.1
+kiteconnect==3.9.7
+selenium==5.10.1
+onetimepass==1.4.2
+requests-oauthlib==1.3.1
+openpyxl==3.1.3
