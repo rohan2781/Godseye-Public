@@ -146,7 +146,7 @@
     </div>
     {% endfor %}
   </div>
-<button id="updateLtpBtn" class="action-btn">Update LTP Now</button>
+<!-- <button id="updateLtpBtn" class="action-btn">Update LTP Now</button> -->
   <script>
     // Theme toggle
     const toggleBtn = document.getElementById('themeToggle');
@@ -208,8 +208,8 @@
     }
 
     // Update every 10 seconds
-    // setInterval(updateLTPs, 10000);
-    document.getElementById("updateLtpBtn").addEventListener("click", updateLTPs);
+    setInterval(updateLTPs, 10000);
+    //document.getElementById("updateLtpBtn").addEventListener("click", updateLTPs);
 
 
   </script>

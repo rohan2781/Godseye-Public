@@ -117,7 +117,7 @@
       {% endfor %}
     </div>
   </div>
-  <button id="updateLtpBtn" class="action-btn">Update LTP Now</button>
+  <!-- <button id="updateLtpBtn" class="action-btn">Update LTP Now</button> -->
 
   <script>
     const toggleBtn = document.getElementById('themeToggle');
@@ -148,8 +148,8 @@
         }
     }
 
-    //setInterval(refreshPnlCards, 10000); // every 10 sec
-    document.getElementById("updateLtpBtn").addEventListener("click", refreshPnlCards);
+    setInterval(refreshPnlCards, 10000); // every 10 sec
+    //document.getElementById("updateLtpBtn").addEventListener("click", refreshPnlCards);
 
   </script>
 </body>

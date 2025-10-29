@@ -4,3 +4,4 @@ connection to websocket reconnect on failure
 error handling
 Freeze quantity default value in case it fails while getting from nse website
 Square-off at strike level and check whatsapp if he told anything more
+LTP from jainam

@@ -9,7 +9,7 @@ import time
 import json
 import struct
 import ssl
-from datetime import datetime
+from datetime import datetime,timedelta
 
 sslopt = {"cert_reqs": ssl.CERT_NONE} ### Not for prodcution
 masterclass_dict = {}
@@ -124,7 +124,7 @@ def master_connection():
     global ltp_cache
     global refresh_time
     try:
-        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now()-refresh_time)<6:
+        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now() - refresh_time) < timedelta(hours=6):
             if not is_ws_connected:
                 ws_connection_call()
             return [masterclass_dict,accounts_global,jainam_user_ids,ws_connection,ltp_cache]

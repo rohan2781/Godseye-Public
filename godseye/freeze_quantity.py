@@ -117,6 +117,7 @@ def get_freeze_quantity_from_nse(symbol, debug=False, timeout=10):
     """
     global nifty_freeze_qty
     global banknifty_freeze_qty
+    print(symbol,nifty_freeze_qty,banknifty_freeze_qty)
     if symbol=='NIFTY' and nifty_freeze_qty !=0:
         return nifty_freeze_qty
     if symbol=='BANKNIFTY' and banknifty_freeze_qty !=0:

@@ -675,6 +675,10 @@ def home(req):
     ltp_cache=response[4]
     nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
     banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
+    if nifty_freeze_qty is None:
+        nifty_freeze_qty=1800
+    if banknifty_freeze_qty is None:
+            banknifty_freeze_qty=900
     sensex_freeze_qty=1000
     kite = KiteConnect(api_key="")
     kite_instruments = kite.instruments("NFO")
