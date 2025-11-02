@@ -21,6 +21,10 @@ multiplier=100
 ws_connection={}
 refresh_time=datetime.now()
 
+def return_ltp_cache():
+    global ltp_cache
+    return ltp_cache
+
 def is_ws_connected():
     global ws_connection
     return ws_connection and ws_connection.sock and ws_connection.sock.connected
@@ -78,6 +82,8 @@ def on_close(ws, close_status_code, close_msg):
 
 def on_open(ws):
     global heartbeat_msg
+    global ws_connection
+    ws_connection=ws
     # # Send subscription
     # ws.send(json.dumps(subscribe_message))
     # print("📨 Sent subscription:", subscribe_message)
@@ -95,7 +101,6 @@ def on_open(ws):
 
 
 def run_ws(ws_url):
-    global ws_connection
     websocket.enableTrace(False)
     ws_connection = websocket.WebSocketApp(
         ws_url,
@@ -129,7 +134,14 @@ def master_connection():
                 ws_connection_call()
             return [masterclass_dict,accounts_global,jainam_user_ids,ws_connection,ltp_cache]
         file_path = os.path.join(settings.BASE_DIR, 'jainam', 'Ayush Keys.xlsx')
-        accounts=pd.read_excel(file_path)
+        retries=0
+        while retries<2:
+            try:
+                accounts=pd.read_excel(file_path)
+                retries=0
+                break
+            except:
+                retries+=1
         accounts["two-fa"] = None
         accounts["auth_token"] = None
         accounts["ROC"] = 0

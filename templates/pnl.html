@@ -17,6 +17,37 @@
       --card-bg: rgba(255,255,255,0.08);
     }
 
+    #snackbar-container {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+      z-index: 9999;
+    }
+
+    .snackbar {
+      background-color: #333;
+      color: #fff;
+      padding: 12px 20px;
+      margin-top: 10px;
+      border-radius: 8px;
+      opacity: 0;
+      transform: translateY(30px);
+      transition: all 0.3s ease;
+      min-width: 220px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .snackbar.success { background-color: #4caf50; }
+    .snackbar.error { background-color: #f44336; }
+    .snackbar.warning { background-color: #ff9800; }
+    .snackbar.info { background-color: #2196f3; }
+
+    .snackbar.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
     body {
       font-family: "Segoe UI", sans-serif;
       background: var(--bg-color);
@@ -107,7 +138,13 @@
       </a>
       <button id="themeToggle" class="theme-toggle">🌙</button>
     </div>
-
+    {% if messages %}
+      <div id="snackbar-container">
+        {% for message in messages %}
+          <div class="snackbar {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
     <div id="accountsPnlContainer">
       {% for account, table_html in rows %}
         <div class="account-card">
@@ -120,6 +157,17 @@
   <!-- <button id="updateLtpBtn" class="action-btn">Update LTP Now</button> -->
 
   <script>
+    // Auto-hide snackbars
+    document.addEventListener('DOMContentLoaded', () => {
+      const snackbars = document.querySelectorAll('.snackbar');
+      snackbars.forEach((snackbar, i) => {
+        setTimeout(() => {
+          snackbar.classList.add('show');
+          setTimeout(() => snackbar.classList.remove('show'), 3000); // hide after 3s
+        }, i * 400); // small delay between multiple messages
+      });
+    });
+    
     const toggleBtn = document.getElementById('themeToggle');
     const currentTheme = localStorage.getItem('theme');
     if (currentTheme === 'dark') document.body.classList.add('dark');

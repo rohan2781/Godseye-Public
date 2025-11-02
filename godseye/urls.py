@@ -21,7 +21,8 @@ from . import views
 # check login of accounts on top of every url and login if not already
 urlpatterns = [
     # path('admin/', admin.site.urls),
-    path('',views.login,name='login'),
+    path('',views.index,name='index'),
+    path('login',views.login,name='login'),
     path('home',views.home,name='home'),
     path('positions',views.positions,name='positions'),
     path('pnl',views.pnl,name='pnl'),
