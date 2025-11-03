@@ -144,7 +144,7 @@ def squareoff(req,id):
         instrument = all_contracts[all_contracts['exchange_token'].astype(str) == str(token)].iloc[0]['company_name']
         iterator=0
         while True:
-            if exchange=='BFO':
+            if re.search(r'B.*F.*O',exchange):
                 ltp_key = f"7_{token}"
                 if ltp_key in ltp_cache:
                     ltp=ltp_cache[ltp_key]
@@ -178,6 +178,7 @@ def squareoff(req,id):
             ltp_cache=return_ltp_cache()
             iterator+=1
         if ltp==0:
+            print('Rohan',ltp_cache)
             messages.info(req,'Square Off Failed')
             return redirect('/positions')
         order_qty=[]
@@ -214,7 +215,7 @@ def squareoff(req,id):
         for key in masterclass_dict:
             print(key,instrument,order_qty)
             if "jainam" in key.lower() and key==account_holder:
-                exchange_segment = "NSEFO" if exchange == "NFO" else "BSEFO"
+                exchange_segment = exchange
                 exchange_token = token
                 product_type = "NRML"
                 order_type = "LIMIT"
