@@ -8,7 +8,7 @@ def get_closed_positions():
         data = f.read()
 
     data = json.loads(data)
-    # print(data)
+    # #print(data)
     return data
 
 
@@ -17,7 +17,7 @@ def get_open_positions():
     with open('open_positions.txt') as json_file:
         data = json.load(json_file)
    
-    # print(data)
+    # #print(data)
     return data
 
 
@@ -49,9 +49,9 @@ def initialize(user_id,password,year):
         'login_id': user_id,
         'password': password,
     }
-    print(json_data)
+    #print(json_data)
     response = requests.post('https://masterswift-beta.mastertrust.co.in/api/v3/user/login', headers=headers, json=json_data)
-    print(response.json())
+    #print(response.json())
     twofa = response.json()['data']['twofa']['twofa_token']
 
     headers = {
@@ -79,16 +79,17 @@ def initialize(user_id,password,year):
     elif len(totp) == 4:
         totp = '00'+totp
     else:
-        print(totp)
+        #print(totp)
+        pass
     json_data = {
         'login_id': user_id,
         'twofa_token':twofa ,
         'totp': totp,
     }
-    # print(json_data)
+    # #print(json_data)
     # return
     response = requests.post('https://masterswift-beta.mastertrust.co.in/api/v3/user/validatetotp', headers=headers, json=json_data)
-    print('Auth Token ',user_id,': ',response.json()['data']['auth_token'])
+    #print('Auth Token ',user_id,': ',response.json()['data']['auth_token'])
     return twofa,response.json()['data']['auth_token']
 def initialize2(user_id, password, year):
     year = str(year)

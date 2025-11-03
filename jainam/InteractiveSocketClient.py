@@ -99,43 +99,43 @@ class OrderSocket_io(socketio.Client):
 
     def on_connect(self):
         """Connect from the socket"""
-        print('Interactive socket connected successfully!')
+        #print('Interactive socket connected successfully!')
 
     def on_message(self):
         """On message from socket"""
-        print('I received a message!')
+        #print('I received a message!')
 
     def on_joined(self, data):
         """On socket joined"""
-        print('Interactive socket joined successfully!' + data)
+        #print('Interactive socket joined successfully!' + data)
 
     def on_error(self, data):
         """On receiving error from socket"""
-        print('Interactive socket error!' + data)
+        #print('Interactive socket error!' + data)
 
     def on_order(self, data):
         """On receiving order placed data from socket"""
-        print("Order placed!" + data)
+        #print("Order placed!" + data)
 
     def on_trade(self, data):
         """On receiving trade data from socket"""
-        print("Trade Received!" + data)
+        #print("Trade Received!" + data)
 
     def on_position(self, data):
         """On receiving position data from socket"""
-        print("Position Retrieved!" + data)
+        #print("Position Retrieved!" + data)
 
     def on_tradeconversion(self, data):
         """On receiving trade conversion data from socket"""
-        print("Trade Conversion Received!" + data)
+        #print("Trade Conversion Received!" + data)
 
     def on_messagelogout(self, data):
         """On receiving user logout message"""
-        print("User logged out!" + data)
+        #print("User logged out!" + data)
 
     def on_disconnect(self):
         """On receiving disconnection from socket"""
-        print('Interactive Socket disconnected!')
+        #print('Interactive Socket disconnected!')
 
     def get_emitter(self):
         """For getting event listener"""

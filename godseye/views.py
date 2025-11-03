@@ -106,10 +106,14 @@ def squareoff(req,id):
         ltp_cache=response[4]
         nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
         banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
-        if nifty_freeze_qty is None:
-            nifty_freeze_qty=1800
-        if banknifty_freeze_qty is None:
+        try:
+            if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                nifty_freeze_qty=1800
+            if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 banknifty_freeze_qty=900
+        except:
+            nifty_freeze_qty=1800
+            banknifty_freeze_qty=900
         sensex_freeze_qty=1000
         kite_instruments = get_instruments_cached("NFO")
         bfo_instruments = get_instruments_cached("BFO")
@@ -202,7 +206,7 @@ def squareoff(req,id):
                         order_qty.append(lots*sensex_lot_size)
                         quantity-=(lots*sensex_lot_size)
         for key in masterclass_dict:
-            print(key,instrument,order_qty)
+            #print(key,instrument,order_qty)
             if "jainam" in key.lower() and key==account_holder:
                 exchange_segment = "NSEFO" if exchange == "NFO" else "BSEFO"
                 exchange_token = token
@@ -216,7 +220,7 @@ def squareoff(req,id):
                 identifier = "aabbcc"
                 user_id = jainam_user_ids[key]
                 for final_order_qty in order_qty:
-                    print('jainam',final_order_qty)
+                    #print('jainam',final_order_qty)
                     Thread(
                         target=masterclass_dict[key].place_order, 
                         kwargs={
@@ -251,7 +255,7 @@ def squareoff(req,id):
                     "user_order_id": "1",
                     "price": ltp
                 }
-                print('Master Trust Order ',order)
+                #print('Master Trust Order ',order)
                 for final_order_qty in order_qty:
                     order['quantity']=final_order_qty    
                     # b = masterclass_dict[i[0]].place_order(order1)
@@ -311,11 +315,11 @@ def pnl(req):
                         except:
                             iterator+=1
 
-                    print(f"{key} positions: {positions}")
+                    #print(f"{key} positions: {positions}")
                     for pos1 in positions:
                         if int(pos1["Quantity"]) == 0:
                             continue
-                        # print(pos1)
+                        # #print(pos1)
                         
                         instrument = pos1["TradingSymbol"].split(" ")[0]
                         try:
@@ -323,7 +327,7 @@ def pnl(req):
                             parsed_date = datetime.strptime(expiry, "%d%b%Y")
                             expiry = parsed_date.strftime("%d-%m-%Y")
                         except Exception as e:
-                            print(e)
+                            #print(e)
                             expiry = date.today().strftime("%d-%m-%Y")
                         if re.search(r'B.*F.*O', pos1['ExchangeSegment']):
                             exchange='BFO'
@@ -352,7 +356,7 @@ def pnl(req):
                         break
                     except:
                         iterator+=1
-                print(df)
+                #print(df)
                 for index, row in df.iterrows():
                     instrument = row["symbol"]
                     
@@ -435,7 +439,7 @@ def pnl(req):
 
         # Normal page load
         return render(req, "pnl.html", {"rows": rows})
-        # print(grouped_pnl)
+        # #print(grouped_pnl)
         # return HttpResponse('PNL')
     else:
         messages.info(req,'Please Login')
@@ -473,7 +477,7 @@ def positions(req):
                     except:
                         iterator+=1
                 df=pd.DataFrame(positions)
-                print(f"{key} positions: {positions}")
+                #print(f"{key} positions: {positions}")
                 data = pd.DataFrame(
                     columns=[
                         "Instrument",
@@ -495,13 +499,13 @@ def positions(req):
                     if int(pos1["Quantity"]) == 0:
                         continue
                     pos = {}
-                    # print(pos1)
+                    # #print(pos1)
                     
                     pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
                     try:
                         pos["Expiry"] = pos1["TradingSymbol"].split(" ")[1]
                     except Exception as e:
-                        print(e)
+                        #print(e)
                         pos["Expiry"] = 0
                     try:
                         pos["Strike"] = pos1["TradingSymbol"].split(" ")[3]
@@ -571,14 +575,14 @@ def positions(req):
                         by=["Instrument", "Expiry", "Type", "Strike"],
                         ascending=[True, True, False, True],
                     )
-                print('jainam Data: ',data)
+                #print('jainam Data: ',data)
                 xts_positions[key] = data
                 continue
             iterator=0
             while iterator<2:
                 try:
                     df = masterclass_dict[key].get_positions()
-                    print(df)
+                    #print(df)
                     iterator=0
                     break
                 except:
@@ -609,7 +613,7 @@ def positions(req):
                 else:
                     nfo = masterclass_dict[key].contracts["NFO"]
                 expiry = find_expiry(nfo,row["instrument_token"],instrument)
-                print(expiry)
+                #print(expiry)
                 # except:
                 #     expiry=datetime.today().date()
                 expiry = dt.datetime.strptime(expiry, "%d-%m-%Y")
@@ -665,9 +669,9 @@ def positions(req):
                 ascending=[True, True, False, True],
             )
             df = df[df["Quantity"] != 0]
-            print("***************")
-            print(df)
-            print("****************")
+            #print("***************")
+            #print(df)
+            #print("****************")
             df["url"] = df.apply(
                 lambda row: reverse("squareoff",kwargs={"id": f"{row['Token']}_{key}_{row['Quantity']}_{row['Exchange']}"},),
                 axis=1
@@ -830,10 +834,14 @@ def home(req):
         ltp_cache=response[4]
         nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
         banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
-        if nifty_freeze_qty is None:
-            nifty_freeze_qty=1800
-        if banknifty_freeze_qty is None:
+        try:
+            if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                nifty_freeze_qty=1800
+            if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 banknifty_freeze_qty=900
+        except:
+            nifty_freeze_qty=1800
+            banknifty_freeze_qty=900
         sensex_freeze_qty=1000
         kite_instruments = get_instruments_cached("NFO")
         bfo_instruments = get_instruments_cached("BFO")
@@ -957,7 +965,7 @@ def home(req):
                     "expiry":expiry,
                     "exchange_token":exchange_token
                 })
-            print(orders)
+            #print(orders)
             for i in accounts_traded:
                 for order in orders:
                     order['quantity']=order['quantity']*int(i[1])
@@ -1033,7 +1041,7 @@ def home(req):
                                     "orderSide": order_side,
                                     "timeInForce": time_in_force,
                                     "disclosedQuantity": disclosed_qty,
-                                    "orderQuantity": final_order_qty,
+                                    "orderQuantity": int(final_order_qty),
                                     "limitPrice": limit_price,
                                     "stopPrice": stop_price,
                                     "orderUniqueIdentifier": identifier,

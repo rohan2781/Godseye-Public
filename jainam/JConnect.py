@@ -168,7 +168,7 @@ class XTSConnect(XTSCommon):
         - `root` is the API end point root. Unless you explicitly
         want to send API requests to a non-default endpoint, this
         can be ignored.
-        - `debug`, if set to True, will serialise and print requests
+        - `debug`, if set to True, will serialise and #print requests
         and responses to stdout.
         - `timeout` is the time (seconds) for which the API client will wait for
         a request to complete before it fails. Defaults to 7 seconds
@@ -200,7 +200,7 @@ class XTSConnect(XTSCommon):
         requests.packages.urllib3.disable_warnings()
 
     def _set_common_variables(self, access_token, userID, isInvestorClient=None):
-        print('Access Token',userID,': ',access_token)
+        #print('Access Token',userID,': ',access_token)
         """Set the `access_token` received after a successful authentication."""
         super().__init__(access_token, userID, isInvestorClient)
 
@@ -216,11 +216,11 @@ class XTSConnect(XTSCommon):
                 "version":str( self._version)
             }
             response = self._post("hostlookup.login", json.dumps(params))
-            print(response)
+            #print(response)
             if "uniqueKey" in response['result']:
                 self.connectionString = response['result']['connectionString']
                 self.uniqueKey = response['result']['uniqueKey']
-            print('connection string: ',self.connectionString)
+            #print('connection string: ',self.connectionString)
             return response
         except Exception as e:
             return response['description']    
@@ -235,7 +235,7 @@ class XTSConnect(XTSCommon):
             }
         
             response = self._post("user.login", params)
-            print(response)
+            #print(response)
             if "token" in response['result']:
                 self._set_common_variables(response['result']['token'], response['result']['userID'],
                                            response['result']['isInvestorClient'])
@@ -286,14 +286,15 @@ class XTSConnect(XTSCommon):
                 "orderUniqueIdentifier": orderUniqueIdentifier,
                 "apiOrderSource":apiOrderSource
             }
-
+            # #print('Jainam Params', params)
             if not self.isInvestorClient:
                 params['clientID'] = self.userID
 
             response = self._post('order.place', json.dumps(params))
             return response
         except Exception as e:
-            return response['description']
+            # #print('Error Jainam Order', e)
+            return
 
     def get_profile(self, clientID=None):
         """Using session token user can access his profile stored with the broker, it's possible to retrieve it any
@@ -321,8 +322,9 @@ class XTSConnect(XTSCommon):
             except Exception as e:
                 return response['description']
         else:
-            print("Balance : Balance API available for retail API users only, dealers can watch the same on dealer "
-                  "terminal")
+            pass
+            #print("Balance : Balance API available for retail API users only, dealers can watch the same on dealer "
+                #   "terminal")
 
     def modify_order(self,
                      appOrderID,
@@ -541,7 +543,7 @@ class XTSConnect(XTSCommon):
                 params['clientID'] = self.userID
 
             response = self._post('bracketorder.place', json.dumps(params))
-            print(response)
+            #print(response)
             return response
         except Exception as e:
             return response['description']

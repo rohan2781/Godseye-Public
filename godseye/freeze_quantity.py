@@ -113,11 +113,11 @@ def get_freeze_quantity_from_nse(symbol, debug=False, timeout=10):
     """
     Try multiple NSE URLs and parse the qtyfreeze CSV robustly.
     Returns integer freeze quantity or None.
-    Set debug=True to print diagnostics.
+    Set debug=True to #print diagnostics.
     """
     global nifty_freeze_qty
     global banknifty_freeze_qty
-    print(symbol,nifty_freeze_qty,banknifty_freeze_qty)
+    #print(symbol,nifty_freeze_qty,banknifty_freeze_qty)
     if symbol=='NIFTY' and nifty_freeze_qty !=0:
         return nifty_freeze_qty
     if symbol=='BANKNIFTY' and banknifty_freeze_qty !=0:
@@ -137,14 +137,16 @@ def get_freeze_quantity_from_nse(symbol, debug=False, timeout=10):
         try:
             r = session.get(url, timeout=timeout)
             if debug:
-                print(f"GET {url} -> {r.status_code}")
+                pass
+                #print(f"GET {url} -> {r.status_code}")
             if r.status_code != 200:
                 continue
             text = r.text
             # quick sanity check
             if len(text) < 50:
                 if debug:
-                    print("Short response, skipping.")
+                    #print("Short response, skipping.")
+                    pass
                 continue
             qty = parse_qty_csv_text(text, symbol)
             if qty is not None:
@@ -155,16 +157,19 @@ def get_freeze_quantity_from_nse(symbol, debug=False, timeout=10):
                 return qty
             else:
                 if debug:
-                    # print small preview for debugging
-                    print("Parsing succeeded but no matching symbol. preview:")
-                    print("\n".join(text.splitlines()[:10]))
+                    # #print small preview for debugging
+                    #print("Parsing succeeded but no matching symbol. preview:")
+                    #print("\n".join(text.splitlines()[:10]))
+                    pass
         except requests.RequestException as e:
             if debug:
-                print(f"Request error for {url}: {e}")
+                pass
+                #print(f"Request error for {url}: {e}")
             continue
 
     if debug:
-        print("All attempts failed.")
+        #print("All attempts failed.")
+        pass
     return None
 
 

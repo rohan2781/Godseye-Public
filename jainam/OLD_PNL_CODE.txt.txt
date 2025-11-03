@@ -135,13 +135,13 @@ kite = KiteConnect(api_key="")
         #         if int(pos1["Quantity"]) == 0:
         #             continue
         #         pos = {}
-        #         # print(pos1)
+        #         # #print(pos1)
                 
         #         pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
         #         try:
         #             pos["Expiry"] = pos1["TradingSymbol"].split(" ")[1]
         #         except Exception as e:
-        #             print(e)
+        #             #print(e)
         #             pos["Expiry"] = 0
         #         try:
         #             pos["Strike"] = pos1["TradingSymbol"].split(" ")[3]

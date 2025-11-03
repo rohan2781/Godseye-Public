@@ -45,7 +45,7 @@ class MasterTrustUser:
         self.authorization_base_url = f'{self.web_url}/api/v1/user/profile?cliend_id={self.username}/'
         self.token_url = f'{self.web_url}/oauth2/token'
         self.scope = ['orders','holdings']
-        print(self.token_url)
+        #print(self.token_url)
         live = True
         if live == False:
             self.base_url = MasterTrustUser.API_ENDPOINTS['Test_URL']
@@ -68,8 +68,8 @@ class MasterTrustUser:
         try:
             # Step 3: Load the ZIP file into memory
             with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-                # Print contents to verify the file name
-                print("ZIP contains:", z.namelist())
+                # #print contents to verify the file name
+                #print("ZIP contains:", z.namelist())
 
                 # Step 4: Extract the CSV file (assuming it's named 'compactscrip.csv')
                 with z.open("CompactScrip.csv") as csv_file:
@@ -77,7 +77,8 @@ class MasterTrustUser:
                     self.allcontracts=df
 
         except:
-            print(f"Failed")
+            pass
+            #print(f"Failed")
 
     def get_driver(self,Name=None):
         # path = os.path.dirname(os.path.abspath(__file__))
@@ -97,20 +98,20 @@ class MasterTrustUser:
         return driver
 
     def login_app(self):
-        print(self.authorization_base_url)
+        #print(self.authorization_base_url)
         try:
 
             oauth = OAuth2Session(self.app_id, redirect_uri=self.redirect_uri, scope=self.scope)
             authorization_url, _state = oauth.authorization_url(self.authorization_base_url,
                                                                 access_type="authorization_code")
 
-            print('authorization_url')
-            print(authorization_url)
+            #print('authorization_url')
+            #print(authorization_url)
             try:
                 self.driver = self.get_driver()
 
             except:
-                print(sys.exc_info())
+                #print(sys.exc_info())
                 self.driver = self.get_driver(Name='PhantomJS')
 
 
@@ -118,9 +119,9 @@ class MasterTrustUser:
             time.sleep(2)
             input_fields = self.driver.find_elements_by_tag_name('input')
             self.driver.save_screenshot('Temp.png')
-            print("Sending Username")
+            #print("Sending Username")
             input_fields[0].send_keys(self.username)
-            print("Sending Password")
+            #print("Sending Password")
             input_fields[1].send_keys(self.password)
             input_fields[1].send_keys(Keys.ENTER)
             time.sleep(1)
@@ -132,18 +133,20 @@ class MasterTrustUser:
                 #self.driver.find_element_by_class_name('btn').click()
                 current_url = self.driver.current_url
             except Exception as e:
-                print(e)
-            print('printing current_url')
-            print(current_url)
+                pass
+                #print(e)
+            #print('#printing current_url')
+            #print(current_url)
             token = oauth.fetch_token(self.token_url, authorization_response=current_url,
                                       client_secret=self.app_secret)
             access_token = token['access_token']
             self.auth_token = access_token
-            print('Login App: ',access_token)
+            #print('Login App: ',access_token)
             self.driver.close()
         except Exception as e:
-            print('Error: ',e)
-            print(sys.exc_info())
+            pass
+            #print('Error: ',e)
+            #print(sys.exc_info())
 
 
     def return_url(self,name):
@@ -156,15 +159,15 @@ class MasterTrustUser:
             'login_id': self.username,
             'password':self.password
         }
-        # print(data)
+        # #print(data)
         login_request = requests.post(url=self.return_url('login'),headers=headers,data=data)
         login_response = login_request.text
         json_data = json.loads(login_response)
-        # print(json_data)
+        # #print(json_data)
         login_response = login_response.replace('false','False')
         login_response = login_response.replace('true','True')
         login_response = eval(login_response)
-        # print(login_response)
+        # #print(login_response)
         if login_response['status'] == 'success':
             twofa_token = login_response['data']['twofa_token']
             question_ids = [x['question_id'] for x in login_response['data']['questions']]
@@ -178,7 +181,7 @@ class MasterTrustUser:
             'question_id': x,
             'answer': self.twofa} for x in question_ids]
         }
-        # print(data)
+        # #print(data)
         twofa_request = requests.post(url=self.return_url('twofa'),json=data)
         twofa_response = twofa_request.text
         twofa_response = twofa_response.replace('true','True')
@@ -186,7 +189,7 @@ class MasterTrustUser:
         twofa_response = eval(twofa_response)
         if twofa_response['status'] == 'success':
             self.auth_token = twofa_response['data']['auth_token']
-            print("Login Successful")
+            #print("Login Successful")
             return
         else:
             raise ValueError(
@@ -206,7 +209,7 @@ class MasterTrustUser:
             # self.contracts['NFO'] = self.contracts['NFO'].append(pd.DataFrame(nfo_contracts[x]),ignore_index = True)
             self.contracts['NFO'] = pd.concat([pd.DataFrame(nfo_contracts[x]) for x in nfo_contracts], ignore_index=True)
 
-        print(self.contracts['NFO'].columns)
+        #print(self.contracts['NFO'].columns)
 
         mcx_contracts = json.loads(requests.get('https://masterswift.mastertrust.co.in/api/v2/contracts.json?exchanges=MCX').text)
         self.contracts['MCX'] = pd.DataFrame()
@@ -222,35 +225,36 @@ class MasterTrustUser:
                 }
 
     def get_profile(self):
-        print("Getting Profile")
+        #print("Getting Profile")
         data = {'client_id': self.username}
-        # print(data)
+        # #print(data)
         res = requests.get(params=data, url=self.return_url('profile'),
                            headers=self.get_authorization_header())
-        print(res.text)
+        #print(res.text)
         #time.sleep(25*60)
         #self.get_profile()
         return json.loads(res.text)
 
     def logged_in(self):
         data = {'client_id': self.username}
-        # print(data)
+        # #print(data)
         res = requests.get(params=data, url=self.return_url('profile'),
                            headers=self.get_authorization_header())
-        # print(res.text)
+        # #print(res.text)
         res = json.loads(res.text)
         if res['status'] != 'success':
             self.initiate_login()
         else:
-            print("Already Logged in.")
+            #print("Already Logged in.")
+            pass
         return
 
     def get_nfo_token(self,expiry,strike,instrument):
         df = self.contracts['NFO']
-        print(df)
-        print(expiry)
+        #print(df)
+        #print(expiry)
         df = df[df['expiry'] == expiry]
-        print(df)
+        #print(df)
         df = df[df['symbol'].apply(lambda x: instrument in x)]
         
         df = df[df['trading_symbol'].apply(lambda x: strike in x)]
@@ -278,19 +282,19 @@ class MasterTrustUser:
 
     def get_positions(self):
         data = {'client_id': self.username,'type':'historical'}
-        # print("Data",data )
-        # print("Header :  ", self.get_authorization_header())
+        # #print("Data",data )
+        # #print("Header :  ", self.get_authorization_header())
         res = requests.get(params=data, url=self.return_url('positions'),
                            headers=self.get_authorization_header())
-        # print(res.headers)
-        # print(res.text)
+        # #print(res.headers)
+        # #print(res.text)
         res = json.loads(res.text)
-        # print(res)
+        # #print(res)
         if res['status'] == 'success':
-            print(res)
+            #print(res)
             return pd.DataFrame(res['data'])
         else:
-            print(res)
+            #print(res)
             raise ValueError("Error in getting Positions")
 
     def place_order(self,order):
@@ -313,7 +317,7 @@ class MasterTrustUser:
         order['quantity'] = abs(order['quantity'])
         order_req = requests.post(self.return_url('place_order'),headers=self.get_authorization_header(),data=order)    
 
-        print(json.loads(order_req.text))
+        #print(json.loads(order_req.text))
         return json.loads(order_req.text)
 
 
@@ -388,7 +392,7 @@ if __name__ == '__main__':
     # x = MasterTrustUser(username='7MPF404', password='bbb@222', twofa='1981', live=True)
     # x = MasterTrustUser(username='7MPF386', password='ppp@111', twofa='1969', live=True)
     # x = MasterTrustUser(username='7MJI01', password='05JUNE1991@', twofa='1994', live=True)
-    # print(x.logged_in())
+    # #print(x.logged_in())
     order = {
         "client_id": "SUPERGOD",
         "disclosed_quantity": 1,
@@ -407,4 +411,4 @@ if __name__ == '__main__':
     #x.place_order(order=order)
     #x.close_positions('SBIN','NSE')
     x.get_profile()
-    print("Positions:",x.get_positions())
+    #print("Positions:",x.get_positions())

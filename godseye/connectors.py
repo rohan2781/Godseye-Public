@@ -55,9 +55,9 @@ def parse_marketdata_message(message):
             "close_price": data[18] / multiplier
         }
         ltp_key=str(parsed['exchange_code'])+'_'+str(parsed['instrument_token'])
-        print('ltp_key',ltp_key)
+        # #print('ltp_key',ltp_key)
         ltp_cache[ltp_key]=parsed['ltp']
-        print('ltp_data:' ,ltp_cache)
+        # #print('ltp_data:' ,ltp_cache)
         return parsed['ltp']
     except:
         return 0
@@ -68,16 +68,18 @@ def on_message(ws, message):
     try:
         parse_marketdata_message(message)
     except:
-        print('Parsing Error')
+        pass
+        #print('Parsing Error')
 
 
 def on_error(ws, error):
-    print('Error in WS connection')
+    pass
+    #print('Error in WS connection')
 
 
 def on_close(ws, close_status_code, close_msg):
     ws_connection_call()
-    print('WS connection Dropped')
+    #print('WS connection Dropped')
 
 
 def on_open(ws):
@@ -86,14 +88,14 @@ def on_open(ws):
     ws_connection=ws
     # # Send subscription
     # ws.send(json.dumps(subscribe_message))
-    # print("📨 Sent subscription:", subscribe_message)
+    # #print("📨 Sent subscription:", subscribe_message)
 
     # Start heartbeat thread
     def send_heartbeat():
         while True:
             time.sleep(10)
             ws.send(json.dumps(heartbeat_msg))
-            print("💓 Sent heartbeat")
+            #print("💓 Sent heartbeat")
 
     heartbeat_thread = threading.Thread(target=send_heartbeat)
     heartbeat_thread.daemon = True
