@@ -14,6 +14,8 @@ import re
 from collections import defaultdict
 from django.urls import reverse
 import time
+from django.middleware.csrf import get_token
+
 
 is_authenticated=False
 instrument_cache = {}
@@ -95,6 +97,189 @@ def get_ltp(req):
         return JsonResponse(result)
     return HttpResponse('Get LTP')
         
+def squareoff_strike(req):
+    if is_authenticated:
+        strike = req.POST.get("strike")
+        body_data = json.loads(req.POST.get("data"))
+        print("Body Data ",body_data)
+        response=master_connection()
+        masterclass_dict=response[0]
+        clients=response[1]
+        jainam_user_ids=response[2]
+        ws_connection=response[3]
+        ltp_cache=response[4]
+        nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
+        banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
+        try:
+            if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                nifty_freeze_qty=1800
+            if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                banknifty_freeze_qty=900
+        except:
+            nifty_freeze_qty=1800
+            banknifty_freeze_qty=900
+        sensex_freeze_qty=1000
+        kite_instruments = get_instruments_cached("NFO")
+        bfo_instruments = get_instruments_cached("BFO")
+        kite_instruments = kite_instruments[kite_instruments["segment"] == "NFO-OPT"]
+        nifty_lot_size=kite_instruments[kite_instruments['name'] == 'NIFTY']['lot_size'].iloc[0]
+        banknifty_lot_size=kite_instruments[kite_instruments['name'] == 'BANKNIFTY']['lot_size'].iloc[0]
+        kite_instruments["expiry"] = pd.to_datetime(kite_instruments["expiry"]).dt.date
+        bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
+        bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
+        sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
+        # data=id.split('_')
+        # token=data[0]
+        # account_holder=data[1]
+        # quantity=data[2]
+        # exchange=data[3]
+        for id in body_data:
+            data = id.rsplit('_', 2)
+            token_and_name = data[0]
+            quantity = data[1]
+            exchange = data[2]
+            # now split token from name (first underscore only)
+            token, account_holder = token_and_name.split('_', 1)
+            for key in masterclass_dict:
+                if "jainam" not in key.lower():
+                    all_contracts=masterclass_dict[key].allcontracts
+                    break
+            instrument = all_contracts[all_contracts['exchange_token'].astype(str) == str(token)].iloc[0]['company_name']
+            iterator=0
+            while True:
+                if re.search(r'B.*F.*O',exchange):
+                    ltp_key = f"7_{token}"
+                    if ltp_key in ltp_cache:
+                        ltp=ltp_cache[ltp_key]
+                    else:
+                        ws_connection.send(json.dumps({
+                            "a": "subscribe",
+                            "v": [[7, token]],
+                            "m": "marketdata"
+                        }))
+                        try:
+                            ltp=ltp_cache[ltp_key]
+                        except:
+                            ltp=0
+                else:
+                    ltp_key = f"2_{token}"
+                    if ltp_key in ltp_cache:
+                        ltp = ltp_cache[ltp_key]
+                    else:
+                        ws_connection.send(json.dumps({
+                            "a": "subscribe",
+                            "v": [[2, token]],
+                            "m": "marketdata"
+                        }))
+                        try:
+                            ltp=ltp_cache[ltp_key]
+                        except:
+                            ltp=0
+                if ltp!=0 or iterator>=5:
+                    break
+                time.sleep(1)
+                ltp_cache=return_ltp_cache()
+                iterator+=1
+            if ltp==0:
+                print('Rohan',ltp_cache)
+                messages.info(req,'Square Off Failed')
+                return redirect('/positions')
+            order_qty=[]
+            order_side="BUY" if int(quantity) < 0 else "SELL"
+            quantity=abs(int(quantity))
+            match instrument:
+                case 'BANKNIFTY':
+                    while int(quantity)>0:
+                        if quantity>banknifty_freeze_qty:
+                            order_qty.append(banknifty_freeze_qty)
+                            quantity-=banknifty_freeze_qty
+                        else:
+                            lots=math.ceil(quantity/banknifty_lot_size)
+                            order_qty.append(lots*banknifty_lot_size)
+                            quantity-=(lots*banknifty_lot_size)
+                case 'NIFTY':
+                    while int(quantity)>0:
+                        if quantity>nifty_freeze_qty:
+                            order_qty.append(nifty_freeze_qty)
+                            quantity-=nifty_freeze_qty
+                        else:
+                            lots=math.ceil(quantity/nifty_lot_size)
+                            order_qty.append(lots*nifty_lot_size)
+                            quantity-=(lots*nifty_lot_size)
+                case 'SENSEX':
+                    while int(quantity)>0:
+                        if quantity>sensex_freeze_qty:
+                            order_qty.append(sensex_freeze_qty)
+                            quantity-=sensex_freeze_qty
+                        else:
+                            lots=math.ceil(quantity/sensex_lot_size)
+                            order_qty.append(lots*sensex_lot_size)
+                            quantity-=(lots*sensex_lot_size)
+            for key in masterclass_dict:
+                print(key,instrument,order_qty)
+                if "jainam" in key.lower() and key==account_holder:
+                    exchange_segment = exchange
+                    exchange_token = token
+                    product_type = "NRML"
+                    order_type = "LIMIT"
+                    order_side = order_side
+                    time_in_force = "DAY"
+                    disclosed_qty = 0
+                    limit_price = ltp
+                    stop_price = 0
+                    identifier = "aabbcc"
+                    user_id = jainam_user_ids[key]
+                    for final_order_qty in order_qty:
+                        print('jainam',final_order_qty)
+                        Thread(
+                            target=masterclass_dict[key].place_order, 
+                            kwargs={
+                                "exchangeSegment": exchange_segment,
+                                "exchangeInstrumentID": exchange_token,
+                                "productType": product_type,
+                                "orderType": order_type,
+                                "orderSide": order_side,
+                                "timeInForce": time_in_force,
+                                "disclosedQuantity": disclosed_qty,
+                                "orderQuantity": int(final_order_qty),
+                                "limitPrice": limit_price,
+                                "stopPrice": stop_price,
+                                "orderUniqueIdentifier": identifier,
+                                "clientID": user_id,
+                            }
+                        ).start()
+                elif key==account_holder:
+                    order={
+                        "instrument":token,
+                        "client_id": masterclass_dict[key].username,
+                        "disclosed_quantity": 0,
+                        "exchange": exchange,
+                        "instrument_token": token,
+                        "market_protection_percentage": 100,
+                        "order_side": order_side,
+                        "order_type": "LIMIT",
+                        "product": "NRML",
+                        "quantity": int(quantity),
+                        "trigger_price": 0,
+                        "validity": "DAY",
+                        "user_order_id": "1",
+                        "price": ltp
+                    }
+                    print('Master Trust Order ',order)
+                    for final_order_qty in order_qty:
+                        order['quantity']=final_order_qty    
+                        # b = masterclass_dict[i[0]].place_order(order1)
+                        Thread(
+                            target=masterclass_dict[key].place_order, args=(order,)
+                        ).start()
+        messages.info(req,'Positions Squared-off')
+        return redirect("/positions")
+        
+    else:
+        messages.info(req,'Please Login')
+        return redirect('/login')
 
 def squareoff(req,id):
     if is_authenticated:
@@ -455,6 +640,7 @@ def pnl(req):
 
 def positions(req):
     if is_authenticated:
+        csrf_token = get_token(req) 
         bfo_instruments = get_instruments_cached("BFO")
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
@@ -469,6 +655,8 @@ def positions(req):
         titles = []
         xts_positions = {}
         threads = []
+        master_dfs=[]
+        grouped = defaultdict(list)
         for key in masterclass_dict:    
             # client_list.append(key)
             if 'jainam' in key.lower():
@@ -510,7 +698,9 @@ def positions(req):
                     
                     pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
                     try:
-                        pos["Expiry"] = pos1["TradingSymbol"].split(" ")[1]
+                        pos["Expiry"] = datetime.strptime(
+                            pos1["TradingSymbol"].split(" ")[1], "%d%b%Y"
+                        ).strftime("%d-%m-%Y")
                     except Exception as e:
                         print(e)
                         pos["Expiry"] = 0
@@ -561,22 +751,38 @@ def positions(req):
                         quantity = pos1['OpenBuyQuantity']
                         price = pos1['BuyAveragePrice']
                         side = 'BUY'
-                    pos['PNL']=(float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity)
+                    pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
                     pos['Quantitys']=quantity
                     pos['Price']=price
                     pos['Side']=side
                     squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}"
+                    grouped[str(pos["Strike"])].append(squareoff_id)
                     url = reverse('squareoff', kwargs={'id': squareoff_id})
                     # url = f"{{% url 'squareoff' id='{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}' %}}"
+                    # pos["SquareOff"] = (
+                    #     '<form method="POST">'
+                    #     + '<button type="submit">'
+                    #     + f'<a href="{url}": target="_blank">'
+                    #     + "Squareoff"
+                    #     + "</a>"
+                    #     + "</button>"
+                    #     + "</form>"
+                    # )
                     pos["SquareOff"] = (
-                        '<form method="POST">'
-                        + '<button type="submit">'
-                        + f'<a href="{url}": target="_blank">'
-                        + "Squareoff"
-                        + "</a>"
-                        + "</button>"
-                        + "</form>"
+                        f'<form action="{url}" method="POST" style="display:inline;">'
+                        f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                        '<button type="submit">Squareoff</button>'
+                        '</form>'
                     )
+                    # url_strike=reverse('squareoff_strike')
+                    # body_json = json.dumps(grouped[pos['Strike']])  # serialize list as JSON
+                    # pos["SquareOff Strike"] = (
+                    #     f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                    #     f'<input type="hidden" name="strike" value="{strike}"/>'
+                    #     f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                    #     '<button type="submit">Squareoff Strikes</button>'
+                    #     '</form>'
+                    # )
                     data.loc[len(data)] = list(pos.values())
                     data = data.sort_values(
                         by=["Instrument", "Expiry", "Type", "Strike"],
@@ -612,62 +818,63 @@ def positions(req):
                 ]
             )
             client_list.append(key)
-            for index, row in df.iterrows():
-                instrument = row["symbol"]
-                # try:
-                if instrument=='SENSEX':
-                    nfo=bfo_instruments
-                else:
-                    nfo = masterclass_dict[key].contracts["NFO"]
-                expiry = find_expiry(nfo,row["instrument_token"],instrument)
-                print(expiry)
-                # except:
-                #     expiry=datetime.today().date()
-                expiry = dt.datetime.strptime(expiry, "%d-%m-%Y")
-                type_ = row["trading_symbol"][-2:]
-                qty = row["net_quantity"]
-                strike = row["trading_symbol"].split(instrument)[1].split(type_)[0][-5:]
-                sell_price = row["average_sell_price"]
-                buy_price = row["average_buy_price"]
-                ltp = row["ltp"]
-                token = str(row["instrument_token"])
-                exchange=str(row['exchange'])
-                if re.search(r'B.*F.*O', exchange):
-                    ws_connection.send(json.dumps({
-                        "a": "subscribe",
-                        "v": [[7, token]],
-                        "m": "marketdata"
-                    }))
-                    ltp_key = f"7_{token}"
-                else:
-                    ws_connection.send(json.dumps({
-                        "a": "subscribe",
-                        "v": [[2, token]],
-                        "m": "marketdata"
-                    }))
-                    ltp_key = f"2_{token}"
-                iterator=0
-                while iterator<2:
-                    if ltp_key in ltp_cache:
-                        iterator=0
-                        break
-                    time.sleep(1)
-                    ltp_cache=return_ltp_cache() 
-                    iterator+=1
-                try:
-                    ltp=ltp_cache[ltp_key]
-                except:
-                    ltp=0
-                if float(row['cf_sell_quantity']) != 0:
-                    quantity = row['cf_sell_quantity']
-                    price = float(row['actual_average_sell_price'])
-                    side = 'SELL'
-                else:
-                    quantity = row['cf_buy_quantity']
-                    price = float(row['actual_average_buy_price'])
-                    side = 'BUY'
-                pnl=(float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity)
-                pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, quantity, price, side]
+            if not df.empty:
+                for index, row in df.iterrows():
+                    instrument = row["symbol"]
+                    # try:
+                    if instrument=='SENSEX':
+                        nfo=bfo_instruments
+                    else:
+                        nfo = masterclass_dict[key].contracts["NFO"]
+                    expiry = find_expiry(nfo,row["instrument_token"],instrument)
+                    print(expiry)
+                    # except:
+                    #     expiry=datetime.today().date()
+                    # expiry = dt.datetime.strptime(expiry, "%d-%m-%Y")
+                    type_ = row["trading_symbol"][-2:]
+                    qty = row["net_quantity"]
+                    strike = row["trading_symbol"].split(instrument)[1].split(type_)[0][-5:]
+                    sell_price = row["average_sell_price"]
+                    buy_price = row["average_buy_price"]
+                    ltp = row["ltp"]
+                    token = str(row["instrument_token"])
+                    exchange=str(row['exchange'])
+                    if re.search(r'B.*F.*O', exchange):
+                        ws_connection.send(json.dumps({
+                            "a": "subscribe",
+                            "v": [[7, token]],
+                            "m": "marketdata"
+                        }))
+                        ltp_key = f"7_{token}"
+                    else:
+                        ws_connection.send(json.dumps({
+                            "a": "subscribe",
+                            "v": [[2, token]],
+                            "m": "marketdata"
+                        }))
+                        ltp_key = f"2_{token}"
+                    iterator=0
+                    while iterator<2:
+                        if ltp_key in ltp_cache:
+                            iterator=0
+                            break
+                        time.sleep(1)
+                        ltp_cache=return_ltp_cache() 
+                        iterator+=1
+                    try:
+                        ltp=ltp_cache[ltp_key]
+                    except:
+                        ltp=0
+                    if float(row['cf_sell_quantity']) != 0:
+                        quantity = row['cf_sell_quantity']
+                        price = float(row['actual_average_sell_price'])
+                        side = 'SELL'
+                    else:
+                        quantity = row['cf_buy_quantity']
+                        price = float(row['actual_average_buy_price'])
+                        side = 'BUY'
+                    pnl=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
+                    pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, quantity, price, side]
 
             # df['Token'] = df['Token'].apply(str)
             df = pos.copy()
@@ -684,19 +891,53 @@ def positions(req):
                 axis=1
             )
             df["rollover_url"] = "https://goddseye.ngrok.io/rollover" + df["Token"]
+            # df["Squareoff"] = df.apply(
+            #     lambda row: (
+            #         '<form method="POST">'
+            #         + '<button type="submit">'
+            #         + f'<a href="{row["url"]}" target="_blank">'
+            #         + "Squareoff"
+            #         + "</a>"
+            #         + "</button>"
+            #         + "</form>"
+            #     ),
+            #     axis=1
+            # )
             df["Squareoff"] = df.apply(
                 lambda row: (
-                    '<form method="POST">'
-                    + '<button type="submit">'
-                    + f'<a href="{row["url"]}" target="_blank">'
-                    + "Squareoff"
-                    + "</a>"
-                    + "</button>"
-                    + "</form>"
+                    f'<form action="{row["url"]}" method="POST" style="display:inline;">'
+                    f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                    '<button type="submit">Squareoff</button>'
+                    '</form>'
                 ),
                 axis=1
             )
-        
+            new_grouped = (
+                df.groupby("Strike")
+                .apply(lambda g: [
+                    f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
+                    for row in g.itertuples(index=False)
+                ])
+                .to_dict()
+            )
+
+            for strike, items in new_grouped.items():
+                grouped[strike].extend(items)
+
+            # def make_squareoff_form(row):
+            #     strike = row.strike
+            #     if strike in grouped:
+            #         body_json = json.dumps(grouped[strike])
+            #         return (
+            #             f'<form action="{url_strike}" method="POST" style="display:inline;">'
+            #             f'<input type="hidden" name="strike" value="{strike}"/>'
+            #             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+            #             '<button type="submit">Squareoff Strikes</button>'
+            #             '</form>'
+            #         )
+            #     return ""
+            # df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+
             df = df.drop(["url","rollover_url"], axis=1)
 
             # df['__row_attr__'] = (
@@ -704,6 +945,7 @@ def positions(req):
             #     'data-exchange="' + df['Exchange'].astype(str) + '" '
             #     f'data-account="{key}"'
             # )
+
             df['__row_attr__'] = (
                 'data-token="' + df['Token'].astype(str) + '" '
                 'data-exchange="' + df['Exchange'].astype(str) + '" '
@@ -715,6 +957,7 @@ def positions(req):
             df = df.drop(columns=['Price','Quantitys','Side'])
             # Mark LTP column cell for live update
             df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
+            df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
 
 
             for index, row in df.iterrows():
@@ -730,6 +973,25 @@ def positions(req):
             # 4) IMPORTANT: Drop __row_attr__ from display BEFORE to_html
             row_attrs = df['__row_attr__'].tolist()  # save separately
             df = df.drop(columns=['__row_attr__'])
+
+            master_dfs.append(df)
+        print('Group ',grouped)
+        url_strike=reverse('squareoff_strike')
+        for df in master_dfs:
+            def make_squareoff_form(row):
+                strike = row.Strike
+                if strike in grouped:
+                    body_json = json.dumps(grouped[strike])
+                    return (
+                        f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                        f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                        f'<input type="hidden" name="strike" value="{strike}"/>'
+                        f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                        '<button type="submit">Squareoff Strikes</button>'
+                        '</form>'
+                    )
+                return ""
+            df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
 
             # 5) Now generate HTML
             html = df.to_html(classes="data", escape=False, index=False)
@@ -748,9 +1010,9 @@ def positions(req):
             html = '\n'.join(final_html)
 
 
-            # 7) Add to output
-            arr.append(html)
-            titles.append(df.columns.values)
+        # 7) Add to output
+        arr.append(html)
+        titles.append(df.columns.values)
             
 
 
@@ -783,7 +1045,21 @@ def positions(req):
             df = df.drop(columns=['Price','Quantitys','Side'])
             # 2) Mark LTP column cell with class="ltp-value"
             df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
-
+            df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
+            def make_squareoff_form(row):
+                strike = row.Strike
+                if strike in grouped:
+                    body_json = json.dumps(grouped[strike])
+                    return (
+                        f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                        f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                        f'<input type="hidden" name="strike" value="{strike}"/>'
+                        f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                        '<button type="submit">Squareoff Strikes</button>'
+                        '</form>'
+                    )
+                return ""
+            df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
             for index, row in df.iterrows():
                 exchange = row['Exchange']  # or whatever column holds the key
                 token = row['Token']
@@ -973,8 +1249,9 @@ def home(req):
                     "exchange_token":exchange_token
                 })
             print(orders)
-            for i in accounts_traded:
-                for order in orders:
+            orders.sort(key=lambda x: 0 if x['order_side'].lower() == 'buy' else 1)
+            for order in orders:
+                for i in accounts_traded:
                     order['quantity']=order['quantity']*int(i[1])
                     temp_qty=order['quantity']
                     order_qty=[]
