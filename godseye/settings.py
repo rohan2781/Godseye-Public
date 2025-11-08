@@ -29,6 +29,8 @@ DEBUG = False
 ALLOWED_HOSTS = [
     '127.0.0.1',
     'godseye-aeyq.onrender.com',
+    '43.204.15.204',
+    'localhost',
 ]
 
 
@@ -57,6 +59,18 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+
+SESSION_ENGINE = "django.contrib.sessions.backends.file"
+SESSION_FILE_PATH = os.path.join(BASE_DIR, "sessions")
+os.makedirs(SESSION_FILE_PATH, exist_ok=True)
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': '/tmp/django_cache',
+    }
+}
 
 ROOT_URLCONF = 'godseye.urls'
 

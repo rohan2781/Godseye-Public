@@ -10,23 +10,16 @@ import json
 import struct
 import ssl
 from datetime import datetime,timedelta
+from django.core.cache import cache
 
-sslopt = {"cert_reqs": ssl.CERT_NONE} ### Not for prodcution
-masterclass_dict = {}
-jainam_user_ids = {}
-accounts_global=pd.DataFrame()
-ltp_cache={}
-heartbeat_msg = { "a": "h", "v": [], "m": "" }
-multiplier=100
-ws_connection={}
-refresh_time=datetime.now()
+cache.set('refresh_time',datetime.now(),timeout=None)
 
 def return_ltp_cache():
-    global ltp_cache
+    ltp_cache=cache.get('ltp_cache') or {}
     return ltp_cache
 
 def is_ws_connected():
-    global ws_connection
+    ws_connection=cache.get('ws_connection') or {}
     return ws_connection and ws_connection.sock and ws_connection.sock.connected
 
 def parse_marketdata_message(message):
@@ -37,26 +30,27 @@ def parse_marketdata_message(message):
         parsed = {
             "exchange_code": data[1],
             "instrument_token": data[2],
-            "ltp": data[3] / multiplier,
+            "ltp": data[3] / 100,
             "last_traded_time": data[4],
             "last_quantity": data[5],
             "trade_volume": data[6],
-            "bid_price": data[7] / multiplier,
+            "bid_price": data[7] / 100,
             "bid_quantity": data[8],
-            "ask_price": data[9] / multiplier,
+            "ask_price": data[9] / 100,
             "ask_quantity": data[10],
             "total_buy_qty": data[11],
             "total_sell_qty": data[12],
-            "average_trade_price": data[13] / multiplier,
+            "average_trade_price": data[13] / 100,
             "exchange_timestamp": data[14],
-            "open_price": data[15] / multiplier,
-            "high_price": data[16] / multiplier,
-            "low_price": data[17] / multiplier,
-            "close_price": data[18] / multiplier
+            "open_price": data[15] / 100,
+            "high_price": data[16] / 100,
+            "low_price": data[17] / 100,
+            "close_price": data[18] / 100
         }
         ltp_key=str(parsed['exchange_code'])+'_'+str(parsed['instrument_token'])
-        # #print('ltp_key',ltp_key)
-        ltp_cache[ltp_key]=parsed['ltp']
+        ltp_cache = cache.get('ltp_cache') or {}
+        ltp_cache[ltp_key] = parsed['ltp']
+        cache.set('ltp_cache', ltp_cache, timeout=None)
         # #print('ltp_data:' ,ltp_cache)
         return parsed['ltp']
     except:
@@ -83,9 +77,7 @@ def on_close(ws, close_status_code, close_msg):
 
 
 def on_open(ws):
-    global heartbeat_msg
-    global ws_connection
-    ws_connection=ws
+    cache.set('ws_connection',ws, timeout=None)
     # # Send subscription
     # ws.send(json.dumps(subscribe_message))
     # #print("📨 Sent subscription:", subscribe_message)
@@ -94,7 +86,7 @@ def on_open(ws):
     def send_heartbeat():
         while True:
             time.sleep(10)
-            ws.send(json.dumps(heartbeat_msg))
+            ws.send(json.dumps({ "a": "h", "v": [], "m": "" }))
             #print("💓 Sent heartbeat")
 
     heartbeat_thread = threading.Thread(target=send_heartbeat)
@@ -111,10 +103,10 @@ def run_ws(ws_url):
         on_error=on_error,
         on_close=on_close
     )
-    ws_connection.run_forever(sslopt=sslopt)
+    ws_connection.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
 
 def ws_connection_call():
-    global masterclass_dict
+    masterclass_dict=cache.get('masterclass_dict') or {}
     for key in masterclass_dict:
         if 'jainam' not in key.lower():
             auth_token=masterclass_dict[key].auth_token
@@ -124,14 +116,15 @@ def ws_connection_call():
             break
 
 def master_connection():
-    global masterclass_dict
-    global accounts_global
-    global jainam_user_ids
-    global ws_connection
-    global ltp_cache
-    global refresh_time
+    masterclass_dict=cache.get('masterclass_dict') or {}
+    accounts_global=cache.get('accounts_global') 
+    if accounts_global is None:
+        accounts_global = pd.DataFrame()
+    jainam_user_ids=cache.get('jainam_user_ids') or {}
+    ws_connection=cache.get('ws_connection') or {}
+    ltp_cache=cache.get('ltp_cache') or {}
     try:
-        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now() - refresh_time) < timedelta(hours=6):
+        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now() - cache.get('refresh_time')) < timedelta(hours=6):
             if not is_ws_connected:
                 ws_connection_call()
             return [masterclass_dict,accounts_global,jainam_user_ids,ws_connection,ltp_cache]
@@ -150,6 +143,7 @@ def master_connection():
         accounts['Enabled'] = accounts['Enabled'].str.lower()
         accounts = accounts[accounts["Enabled"] == "yes"]
         accounts_global=accounts['Name']
+        cache.set('accounts_global',accounts_global, timeout=None)
         for index, row in accounts.iterrows():
             if 'jainam' in row['Name'].lower():
                 API_KEY = row['App ID']
@@ -172,8 +166,10 @@ def master_connection():
                 app_id=row["App ID"],
                 app_secret=row["App Secret"],
             )
+        cache.set('masterclass_dict',masterclass_dict, timeout=None)
+        cache.set('jainam_user_ids',jainam_user_ids, timeout=None)
+        cache.set('refresh_time',datetime.now(),timeout=None)
         ws_connection_call()
     except:
         master_connection()
-    refresh_time=datetime.now()
     return [masterclass_dict,accounts_global,jainam_user_ids,ws_connection,ltp_cache]

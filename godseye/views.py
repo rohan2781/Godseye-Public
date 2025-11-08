@@ -15,28 +15,40 @@ from collections import defaultdict
 from django.urls import reverse
 import time
 from django.middleware.csrf import get_token
-
-
-is_authenticated=False
-instrument_cache = {}
-positions_data=[]
+from django.core.cache import cache
 
 def get_instruments_cached(exchange):
     """Fetch and cache instruments for a given exchange."""
-    global instrument_cache
     today = date.today()
+    cache_key = f"instrument_cache_{exchange}"
 
-    if exchange in instrument_cache:
-        # Check if cached today
-        cache_date, df = instrument_cache[exchange]
+    cached = cache.get(cache_key)
+    if cached:
+        cache_date, df_json = cached
         if cache_date == today:
-            return df
+            return pd.read_json(df_json)
 
+    # Not cached or expired → fetch again
     kite = KiteConnect(api_key="")
     instruments = kite.instruments(exchange)
     df = pd.DataFrame(instruments)
-    instrument_cache[exchange] = (today, df)
+
+    # Cache (store date + JSON string of DataFrame)
+    cache.set(cache_key, (today, df.to_json()), timeout=None)
     return df
+    # today = date.today()
+
+    # if exchange in instrument_cache:
+    #     # Check if cached today
+    #     cache_date, df = instrument_cache[exchange]
+    #     if cache_date == today:
+    #         return df
+
+    # kite = KiteConnect(api_key="")
+    # instruments = kite.instruments(exchange)
+    # df = pd.DataFrame(instruments)
+    # instrument_cache[exchange] = (today, df)
+    # return df
 
 def fetch_ltp(positions):
     response = master_connection()
@@ -98,7 +110,7 @@ def get_ltp(req):
     return HttpResponse('Get LTP')
         
 def squareoff_strike(req):
-    if is_authenticated:
+    if req.session.get("logged_in"):
         strike = req.POST.get("strike")
         body_data = json.loads(req.POST.get("data"))
         #print("Body Data ",body_data)
@@ -114,10 +126,10 @@ def squareoff_strike(req):
             if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 nifty_freeze_qty=1800
             if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
-                banknifty_freeze_qty=900
+                banknifty_freeze_qty=600
         except:
             nifty_freeze_qty=1800
-            banknifty_freeze_qty=900
+            banknifty_freeze_qty=600
         sensex_freeze_qty=1000
         kite_instruments = get_instruments_cached("NFO")
         bfo_instruments = get_instruments_cached("BFO")
@@ -282,7 +294,7 @@ def squareoff_strike(req):
         return redirect('/login')
 
 def squareoff(req,id):
-    if is_authenticated:
+    if req.session.get("logged_in"):
         response=master_connection()
         masterclass_dict=response[0]
         clients=response[1]
@@ -295,10 +307,10 @@ def squareoff(req,id):
             if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 nifty_freeze_qty=1800
             if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
-                banknifty_freeze_qty=900
+                banknifty_freeze_qty=600
         except:
             nifty_freeze_qty=1800
-            banknifty_freeze_qty=900
+            banknifty_freeze_qty=600
         sensex_freeze_qty=1000
         kite_instruments = get_instruments_cached("NFO")
         bfo_instruments = get_instruments_cached("BFO")
@@ -477,8 +489,7 @@ def find_expiry(nfo,token,instrument):
 
 
 def pnl(req):
-    if is_authenticated:
-        global positions_data
+    if req.session.get("logged_in"):
         if not req.headers.get('x-requested-with') == 'XMLHttpRequest':
             bfo_instruments = get_instruments_cached("BFO")
             bfo_instruments = pd.DataFrame(bfo_instruments)
@@ -492,7 +503,6 @@ def pnl(req):
                 columns=['Account','Instrument','Expiry','PNL']
             )
             accounts=[]
-            positions_data=[]
             for key in masterclass_dict:
                 if 'jainam' in key.lower():
                     user_id = jainam_user_ids[key]
@@ -549,41 +559,48 @@ def pnl(req):
                     except:
                         iterator+=1
                 #print(df)
-                for index, row in df.iterrows():
-                    instrument = row["symbol"]
-                    
-                    # Determine which instrument list to use
-                    if instrument == 'SENSEX':
-                        nfo = bfo_instruments
-                    else:
-                        nfo = masterclass_dict[key].contracts["NFO"]
-                    
-                    # Find the expiry using your custom function
-                    expiry = find_expiry(nfo, row["instrument_token"], instrument)
-                    
-                    # Determine trade direction (Buy or Sell) and extract quantity and price
-                    if row['cf_sell_quantity'] != 0:
-                        quantity = row['cf_sell_quantity']
-                        price = row['actual_average_sell_price']
-                        side = 'SELL'
-                    else:
-                        quantity = row['cf_buy_quantity']
-                        price = row['actual_average_buy_price']
-                        side = 'BUY'
-                    if re.search(r'B.*F.*O', row['exchange']):
-                        exchange='BFO'
-                    else:
-                        exchange='NFO'
-                    # positions_data.append(key,)
-                    # Append to the accounts list
-                    t = Thread(target=subscribe_row, args=(ws_connection, exchange, row['instrument_token']))
-                    t.start()
-                    accounts.append((key, instrument, expiry, side, abs(float(quantity)), abs(float(price)),row['instrument_token'],exchange))
-            positions_data.extend(accounts)
+                if not df.empty:
+                    for index, row in df.iterrows():
+                        instrument = row["symbol"]
+                        
+                        # Determine which instrument list to use
+                        if instrument == 'SENSEX':
+                            nfo = bfo_instruments
+                        else:
+                            nfo = masterclass_dict[key].contracts["NFO"]
+                        
+                        # Find the expiry using your custom function
+                        expiry = find_expiry(nfo, row["instrument_token"], instrument)
+                        
+                        # Determine trade direction (Buy or Sell) and extract quantity and price
+                        if row['cf_sell_quantity'] != 0:
+                            quantity = row['cf_sell_quantity']
+                            price = row['actual_average_sell_price']
+                            side = 'SELL'
+                        else:
+                            quantity = row['cf_buy_quantity']
+                            price = row['actual_average_buy_price']
+                            side = 'BUY'
+                        if re.search(r'B.*F.*O', row['exchange']):
+                            exchange='BFO'
+                        else:
+                            exchange='NFO'
+                        # positions_data.append(key,)
+                        # Append to the accounts list
+                        t = Thread(target=subscribe_row, args=(ws_connection, exchange, row['instrument_token']))
+                        t.start()
+                        accounts.append((key, instrument, expiry, side, abs(float(quantity)), abs(float(price)),row['instrument_token'],exchange))
+            
+            cache_key = "positions"
+            data = list(accounts)
+            cache.set(cache_key, data, timeout=None)
+            # positions_data.extend(accounts)
+        
         # Calculate PNL
         # Create a dictionary to hold the grouped totals
         # Construct the payload
         payload = []
+        positions_data=cache.get('positions')
         for account, instrument, expiry, side, qty, price, token, exchange in positions_data:
             payload.append({
                 "token": token,
@@ -639,7 +656,7 @@ def pnl(req):
 
 
 def positions(req):
-    if is_authenticated:
+    if req.session.get("logged_in"):
         csrf_token = get_token(req) 
         bfo_instruments = get_instruments_cached("BFO")
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
@@ -657,7 +674,8 @@ def positions(req):
         threads = []
         master_dfs=[]
         grouped = defaultdict(list)
-        for key in masterclass_dict:    
+        for key in masterclass_dict:  
+            print(key)  
             # client_list.append(key)
             if 'jainam' in key.lower():
                 user_id = jainam_user_ids[key]
@@ -992,7 +1010,9 @@ def positions(req):
                     )
                 return ""
             df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
-
+            sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
+            df['Type_order'] = df['Type'].map(sort_order)
+            df = df.sort_values(by=['Type_order', 'Strike']).drop(columns='Type_order')
             # 5) Now generate HTML
             html = df.to_html(classes="data", escape=False, index=False)
 
@@ -1074,6 +1094,10 @@ def positions(req):
             row_attrs = df['__row_attr__'].tolist()
             df = df.drop(columns=['__row_attr__'])
 
+            sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
+            df['Type_order'] = df['Type'].map(sort_order)
+            df = df.sort_values(by=['Type_order', 'Strike']).drop(columns='Type_order')
+
             # 5) Render table normally (no __row_attr__ visible)
             html = df.to_html(
                 classes="data",
@@ -1107,8 +1131,7 @@ def positions(req):
 
 
 def home(req):
-    global is_authenticated
-    if is_authenticated:
+    if req.session.get("logged_in"):
         response=master_connection()
         masterclass_dict=response[0]
         clients=response[1]
@@ -1121,10 +1144,10 @@ def home(req):
             if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 nifty_freeze_qty=1800
             if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
-                banknifty_freeze_qty=900
+                banknifty_freeze_qty=600
         except:
             nifty_freeze_qty=1800
-            banknifty_freeze_qty=900
+            banknifty_freeze_qty=600
         sensex_freeze_qty=1000
         kite_instruments = get_instruments_cached("NFO")
         bfo_instruments = get_instruments_cached("BFO")
@@ -1226,7 +1249,7 @@ def home(req):
                     ltp = round(ltp * 0.9, 1)
 
                 if ltp > 1300:
-                    messages.info("Error Price TOO HIGH")
+                    messages.info(req,"Error Price TOO HIGH")
                     return redirect('/home')
                 
                 orders.append({
@@ -1252,8 +1275,8 @@ def home(req):
             orders.sort(key=lambda x: 0 if x['order_side'].lower() == 'buy' else 1)
             for order in orders:
                 for i in accounts_traded:
-                    order['quantity']=order['quantity']*int(i[1])
-                    temp_qty=order['quantity']
+                    # order['quantity']=order['quantity']*int(i[1])
+                    temp_qty=order['quantity']*int(i[1])
                     order_qty=[]
                     match order['instrument']:
                         case 'BANKNIFTY':
@@ -1370,12 +1393,13 @@ def home(req):
         return redirect('/login')
 
 def login(req):
-    global is_authenticated
+    req.session['logged_in']=False
     if req.method=='POST':
         username=req.POST['username'].lower()
         password=req.POST['password']
         if username=='ganesha' and password=='ayusshmittaal':
-            is_authenticated=True
+            req.session["logged_in"] = True
+            req.session.set_expiry(25200)  # expires in 5 minutes (300 seconds)
             return redirect('/home')
         else:
             messages.info(req,'Invalid Credentials')
@@ -1383,9 +1407,9 @@ def login(req):
     return render(req,'login.html')
 
 def logout(req):
-    global is_authenticated
-    is_authenticated=False
+    req.session['logged_in']=False
     return redirect('/login')
 
 def index(req):
+    req.session['logged_in']=False
     return redirect('/login')
