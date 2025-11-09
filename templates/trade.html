@@ -290,10 +290,18 @@
       <a href="{% url 'positions' %}">
         <button type="button" class="btn-header" id="positionsBtn">Positions</button>
       </a>
+
       <h3 class="trade-header">Multi-Leg Order Setup</h3>
+
       <a href="{% url 'pnl' %}">
         <button type="button" class="btn-header" id="pnlBtn">PNL</button>
       </a>
+
+      <!-- 🔽 Logout button positioned slightly below PNL -->
+      <form method="POST" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-header" style="right: 0; top: 40px;">Logout</button>
+      </form>
     </div>
     {% if messages %}
       <div id="snackbar-container">

@@ -1,0 +1,11 @@
+ssh -i "C:\Users\alp\Downloads\godseye.pem" ubuntu@13.204.45.49
+sudo nano /etc/nginx/sites-available/godseye
+sudo nano /etc/systemd/system/gunicorn.service
+sudo systemctl daemon-reload
+sudo systemctl restart gunicorn
+sudo systemctl status gunicorn
+sudo systemctl restart nginx
+
+sudo cat /var/log/nginx/error.log
+journalctl -u gunicorn.service
+sudo journalctl -u gunicorn -n 100

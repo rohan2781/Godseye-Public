@@ -140,7 +140,8 @@ def squareoff_strike(req):
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
         # data=id.split('_')
         # token=data[0]
@@ -321,7 +322,8 @@ def squareoff(req,id):
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
         # data=id.split('_')
         # token=data[0]
@@ -680,6 +682,7 @@ def positions(req):
             if 'jainam' in key.lower():
                 user_id = jainam_user_ids[key]
                 iterator=0
+                positions=[]
                 while iterator<2:
                     try:
                         positions = masterclass_dict[key].get_position_netwise(user_id)["result"][
@@ -1158,7 +1161,7 @@ def home(req):
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
         # kite_instruments.to_csv('D:\Ayussh\godseye\jainam\kite_instruments.csv')
         # bfo_instruments.to_csv('D:\Ayussh\godseye\jainam\\bfo_instruments.csv')
