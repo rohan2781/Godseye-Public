@@ -17,38 +17,23 @@ import time
 from django.middleware.csrf import get_token
 from django.core.cache import cache
 
+instrument_cache={}
+positions_data=[]
+
 def get_instruments_cached(exchange):
     """Fetch and cache instruments for a given exchange."""
-    today = date.today()
-    cache_key = f"instrument_cache_{exchange}"
-
-    cached = cache.get(cache_key)
-    if cached:
-        cache_date, df_json = cached
+    today=datetime.today().date()
+    if exchange in instrument_cache:
+        # Check if cached today
+        cache_date, df = instrument_cache[exchange]
         if cache_date == today:
-            return pd.read_json(df_json)
+            return df
 
-    # Not cached or expired → fetch again
     kite = KiteConnect(api_key="")
     instruments = kite.instruments(exchange)
     df = pd.DataFrame(instruments)
-
-    # Cache (store date + JSON string of DataFrame)
-    cache.set(cache_key, (today, df.to_json()), timeout=None)
+    instrument_cache[exchange] = (today, df)
     return df
-    # today = date.today()
-
-    # if exchange in instrument_cache:
-    #     # Check if cached today
-    #     cache_date, df = instrument_cache[exchange]
-    #     if cache_date == today:
-    #         return df
-
-    # kite = KiteConnect(api_key="")
-    # instruments = kite.instruments(exchange)
-    # df = pd.DataFrame(instruments)
-    # instrument_cache[exchange] = (today, df)
-    # return df
 
 def fetch_ltp(positions):
     response = master_connection()
@@ -66,7 +51,7 @@ def fetch_ltp(positions):
             else:
                 ws_connection.send(json.dumps({
                     "a": "subscribe",
-                    "v": [[7, row['token']]],
+                    "v": [[7, int(row['token'])]],
                     "m": "marketdata"
                 }))
                 result[key] = 0
@@ -77,7 +62,7 @@ def fetch_ltp(positions):
             else:
                 ws_connection.send(json.dumps({
                     "a": "subscribe",
-                    "v": [[2, row['token']]],
+                    "v": [[2, int(row['token'])]],
                     "m": "marketdata"
                 }))
                 result[key] = 0
@@ -89,14 +74,14 @@ def subscribe_row(ws_connection, exchange, token):
     if re.search(r'B.*F.*O', exchange):
         subscribe_message = {
             "a": "subscribe",
-            "v": [[7, token]],
+            "v": [[7, int(token)]],
             "m": "marketdata"
         }
         ws_connection.send(json.dumps(subscribe_message))
     else:
         subscribe_message = {
             "a": "subscribe",
-            "v": [[2, token]],
+            "v": [[2, int(token)]],
             "m": "marketdata"
         }
         ws_connection.send(json.dumps(subscribe_message))
@@ -141,7 +126,8 @@ def squareoff_strike(req):
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
         # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
+        
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
         # data=id.split('_')
         # token=data[0]
@@ -169,7 +155,7 @@ def squareoff_strike(req):
                     else:
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[7, token]],
+                            "v": [[7, int(token)]],
                             "m": "marketdata"
                         }))
                         try:
@@ -183,7 +169,7 @@ def squareoff_strike(req):
                     else:
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[2, token]],
+                            "v": [[2, int(token)]],
                             "m": "marketdata"
                         }))
                         try:
@@ -323,7 +309,8 @@ def squareoff(req,id):
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
         # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
+        
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
         # data=id.split('_')
         # token=data[0]
@@ -350,7 +337,7 @@ def squareoff(req,id):
                 else:
                     ws_connection.send(json.dumps({
                         "a": "subscribe",
-                        "v": [[7, token]],
+                        "v": [[7, int(token)]],
                         "m": "marketdata"
                     }))
                     try:
@@ -364,7 +351,7 @@ def squareoff(req,id):
                 else:
                     ws_connection.send(json.dumps({
                         "a": "subscribe",
-                        "v": [[2, token]],
+                        "v": [[2, int(token)]],
                         "m": "marketdata"
                     }))
                     try:
@@ -483,7 +470,7 @@ def squareoff_puts(req):
 
 def find_expiry(nfo,token,instrument):
     if instrument=='SENSEX':
-        nfo = nfo[nfo["exchange_token"] == str(token)]
+        nfo = nfo[nfo["exchange_token"].astype(str) == str(token)]
         return nfo.iloc[0]["expiry"].strftime("%d-%m-%Y")
     else:
         nfo = nfo[nfo["code"] == str(token)]
@@ -491,6 +478,7 @@ def find_expiry(nfo,token,instrument):
 
 
 def pnl(req):
+    global positions_data
     if req.session.get("logged_in"):
         if not req.headers.get('x-requested-with') == 'XMLHttpRequest':
             bfo_instruments = get_instruments_cached("BFO")
@@ -593,16 +581,12 @@ def pnl(req):
                         t.start()
                         accounts.append((key, instrument, expiry, side, abs(float(quantity)), abs(float(price)),row['instrument_token'],exchange))
             
-            cache_key = "positions"
-            data = list(accounts)
-            cache.set(cache_key, data, timeout=None)
-            # positions_data.extend(accounts)
+            positions_data.extend(accounts)
         
         # Calculate PNL
         # Create a dictionary to hold the grouped totals
         # Construct the payload
         payload = []
-        positions_data=cache.get('positions')
         for account, instrument, expiry, side, qty, price, token, exchange in positions_data:
             payload.append({
                 "token": token,
@@ -741,14 +725,14 @@ def positions(req):
                     if re.search(r'B.*F.*O', exchange):
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[7, token]],
+                            "v": [[7, int(token)]],
                             "m": "marketdata"
                         }))
                         ltp_key = f"7_{token}"
                     else:
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[2, token]],
+                            "v": [[2, int(token)]],
                             "m": "marketdata"
                         }))
                         ltp_key = f"2_{token}"
@@ -863,14 +847,14 @@ def positions(req):
                     if re.search(r'B.*F.*O', exchange):
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[7, token]],
+                            "v": [[7, int(token)]],
                             "m": "marketdata"
                         }))
                         ltp_key = f"7_{token}"
                     else:
                         ws_connection.send(json.dumps({
                             "a": "subscribe",
-                            "v": [[2, token]],
+                            "v": [[2, int(token)]],
                             "m": "marketdata"
                         }))
                         ltp_key = f"2_{token}"
@@ -1161,10 +1145,8 @@ def home(req):
         bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
         bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
         sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
-        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"], unit="ms", errors="coerce").dt.date
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
         bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
-        # kite_instruments.to_csv('D:\Ayussh\godseye\jainam\kite_instruments.csv')
-        # bfo_instruments.to_csv('D:\Ayussh\godseye\jainam\\bfo_instruments.csv')
         if req.method == "POST":
             # for key,value in req.POST.items():
                 
@@ -1218,7 +1200,7 @@ def home(req):
                         else:
                             ws_connection.send(json.dumps({
                                     "a": "subscribe",
-                                    "v": [[7, exchange_token]],
+                                    "v": [[7, int(exchange_token)]],
                                     "m": "marketdata"
                             }))
                             try:
@@ -1232,7 +1214,7 @@ def home(req):
                         else:
                             ws_connection.send(json.dumps({
                                     "a": "subscribe",
-                                    "v": [[2, exchange_token]],
+                                    "v": [[2, int(exchange_token)]],
                                     "m": "marketdata"
                             }))
                             try:
@@ -1320,7 +1302,7 @@ def home(req):
                         temp_order.pop("strike",None)
                         temp_order.pop("exchange_token",None)
                         for final_order_qty in order_qty:
-                            temp_order['quantity']=final_order_qty    
+                            temp_order['quantity']=float(final_order_qty)
                             # b = masterclass_dict[i[0]].place_order(order1)
                             Thread(
                                 target=masterclass_dict[i[0]].place_order, args=(temp_order,)

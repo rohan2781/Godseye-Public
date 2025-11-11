@@ -12,17 +12,23 @@ import ssl
 from datetime import datetime,timedelta
 from django.core.cache import cache
 
-cache.set('refresh_time',datetime.now(),timeout=None)
+refresh_time=datetime.now()
+ws_connection = None
+masterclass_dict = {}
+ltp_cache={}
+accounts_global=pd.DataFrame()
+jainam_user_ids={}
 
 def return_ltp_cache():
-    ltp_cache=cache.get('ltp_cache') or {}
+    global ltp_cache
     return ltp_cache
 
 def is_ws_connected():
-    ws_connection=cache.get('ws_connection') or {}
+    global ws_connection
     return ws_connection and ws_connection.sock and ws_connection.sock.connected
 
 def parse_marketdata_message(message):
+    global ltp_cache
     try:
         # Extract fields as per spec
         data = struct.unpack(">B B I I I I I I I I Q Q I I I I I I I I I I I I", message[:98])
@@ -48,9 +54,7 @@ def parse_marketdata_message(message):
             "close_price": data[18] / 100
         }
         ltp_key=str(parsed['exchange_code'])+'_'+str(parsed['instrument_token'])
-        ltp_cache = cache.get('ltp_cache') or {}
         ltp_cache[ltp_key] = parsed['ltp']
-        cache.set('ltp_cache', ltp_cache, timeout=None)
         # #print('ltp_data:' ,ltp_cache)
         return parsed['ltp']
     except:
@@ -67,6 +71,7 @@ def on_message(ws, message):
 
 
 def on_error(ws, error):
+    # print('Error in connection ',error)
     pass
     #print('Error in WS connection')
 
@@ -77,7 +82,8 @@ def on_close(ws, close_status_code, close_msg):
 
 
 def on_open(ws):
-    cache.set('ws_connection',ws, timeout=None)
+    global ws_connection
+    ws_connection=ws
     # # Send subscription
     # ws.send(json.dumps(subscribe_message))
     # #print("📨 Sent subscription:", subscribe_message)
@@ -87,7 +93,7 @@ def on_open(ws):
         while True:
             time.sleep(10)
             ws.send(json.dumps({ "a": "h", "v": [], "m": "" }))
-            #print("💓 Sent heartbeat")
+            # print("💓 Sent heartbeat")
 
     heartbeat_thread = threading.Thread(target=send_heartbeat)
     heartbeat_thread.daemon = True
@@ -95,6 +101,7 @@ def on_open(ws):
 
 
 def run_ws(ws_url):
+    global ws_connection
     websocket.enableTrace(False)
     ws_connection = websocket.WebSocketApp(
         ws_url,
@@ -106,26 +113,26 @@ def run_ws(ws_url):
     ws_connection.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
 
 def ws_connection_call():
-    masterclass_dict=cache.get('masterclass_dict') or {}
+    global masterclass_dict
     for key in masterclass_dict:
         if 'jainam' not in key.lower():
             auth_token=masterclass_dict[key].auth_token
             base_url=masterclass_dict[key].base_url.replace('https://','')
             ws_url = f"wss://{base_url}/ws/v1/feeds?token={auth_token}"
+            
             threading.Thread(target=run_ws, args=(ws_url,), daemon=True).start()
             break
 
 def master_connection():
-    masterclass_dict=cache.get('masterclass_dict') or {}
-    accounts_global=cache.get('accounts_global') 
-    if accounts_global is None:
-        accounts_global = pd.DataFrame()
-    jainam_user_ids=cache.get('jainam_user_ids') or {}
-    ws_connection=cache.get('ws_connection') or {}
-    ltp_cache=cache.get('ltp_cache') or {}
+    global ws_connection
+    global masterclass_dict
+    global accounts_global
+    global jainam_user_ids
+    global ltp_cache
+    global refresh_time
     try:
-        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now() - cache.get('refresh_time')) < timedelta(hours=6):
-            if not is_ws_connected:
+        if masterclass_dict and not accounts_global.empty and jainam_user_ids and (datetime.now() - refresh_time < timedelta(hours=6)):
+            if not is_ws_connected():
                 ws_connection_call()
             return [masterclass_dict,accounts_global,jainam_user_ids,ws_connection,ltp_cache]
         file_path = os.path.join(settings.BASE_DIR, 'jainam', 'Ayush Keys.xlsx')
@@ -143,7 +150,6 @@ def master_connection():
         accounts['Enabled'] = accounts['Enabled'].str.lower()
         accounts = accounts[accounts["Enabled"] == "yes"]
         accounts_global=accounts['Name']
-        cache.set('accounts_global',accounts_global, timeout=None)
         for index, row in accounts.iterrows():
             if 'jainam' in row['Name'].lower():
                 API_KEY = row['App ID']
@@ -166,9 +172,6 @@ def master_connection():
                 app_id=row["App ID"],
                 app_secret=row["App Secret"],
             )
-        cache.set('masterclass_dict',masterclass_dict, timeout=None)
-        cache.set('jainam_user_ids',jainam_user_ids, timeout=None)
-        cache.set('refresh_time',datetime.now(),timeout=None)
         ws_connection_call()
     except:
         master_connection()

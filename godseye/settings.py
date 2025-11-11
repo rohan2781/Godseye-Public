@@ -65,12 +65,12 @@ SESSION_FILE_PATH = os.path.join(BASE_DIR, "sessions")
 os.makedirs(SESSION_FILE_PATH, exist_ok=True)
 
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': '/tmp/django_cache',
-    }
-}
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+#         'LOCATION': '/tmp/django_cache',
+#     }
+# }
 
 ROOT_URLCONF = 'godseye.urls'
 
