@@ -261,9 +261,9 @@
 
           let pnl = 0;
           if (side === "BUY") {
-            pnl = (newLTP - price) * qty;
+            pnl = (newLTP * qty) - price;
           } else {
-            pnl = (price - newLTP) * qty;
+            pnl = price - (newLTP * qty);
           }
 
           // Update PNL

@@ -809,6 +809,7 @@ def positions(req):
             while iterator<2:
                 try:
                     df = masterclass_dict[key].get_positions()
+                    trades=masterclass_dict[key].get_trades()
                     ## print(df)
                     iterator=0
                     break
@@ -879,15 +880,30 @@ def positions(req):
                         ltp=ltp_cache[ltp_key]
                     except:
                         ltp=0
-                    if float(row['cf_sell_quantity']) != 0:
-                        quantity = row['cf_sell_quantity']
-                        price = float(row['actual_average_sell_price'])
-                        side = 'SELL'
-                    else:
-                        quantity = row['cf_buy_quantity']
-                        price = float(row['actual_average_buy_price'])
+
+                    filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
+                    
+                    # Sum the trade_price column of the filtered trades
+                    total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
+
+                    if row['net_quantity']>0:
+                        quantity = abs(int(row['net_quantity']))
+                        price = total_value
                         side = 'BUY'
-                    pnl=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
+                    else:
+                        quantity = abs(int(row['net_quantity']))
+                        price = total_value
+                        side = 'SELL'
+
+                    # if float(row['cf_sell_quantity']) != 0:
+                    #     quantity = row['cf_sell_quantity']
+                    #     price = float(row['actual_average_sell_price'])
+                    #     side = 'SELL'
+                    # else:
+                    #     quantity = row['cf_buy_quantity']
+                    #     price = float(row['actual_average_buy_price'])
+                    #     side = 'BUY'
+                    pnl=round((float(ltp) * float(quantity)) - float(price)  if side == 'BUY' else float(price) - (float(ltp) * float(quantity)),2)
                     pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, quantity, price, side]
 
             # df['Token'] = df['Token'].apply(str)

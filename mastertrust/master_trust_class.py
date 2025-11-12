@@ -279,6 +279,17 @@ class MasterTrustUser:
         else:
             
             raise ValueError("Error in getting orders")
+        
+
+    def get_trades(self):
+        data = {'client_id':self.username}
+        res = requests.get(params = data,url = self.return_url('trades'),headers=self.get_authorization_header())
+        res = json.loads(res.text)
+        if res['status'] == 'success':
+            return pd.DataFrame(res['data']['trades'])
+        else:
+            
+            raise ValueError("Error in getting orders")
 
     def get_positions(self):
         data = {'client_id': self.username,'type':'historical'}
