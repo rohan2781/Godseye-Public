@@ -1076,8 +1076,8 @@ def positions(req):
                 df = df.drop(columns=['Token', 'Exchange'])
 
                 # 4) IMPORTANT: Drop __row_attr__ from display BEFORE to_html
-                row_attrs = df['__row_attr__'].tolist()  # save separately
-                df = df.drop(columns=['__row_attr__'])
+                # row_attrs = df['__row_attr__'].tolist()  # save separately
+                # df = df.drop(columns=['__row_attr__'])
 
                 master_dfs.append(df)
             ## print('Group ',grouped)
@@ -1100,6 +1100,8 @@ def positions(req):
                 sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
                 df['Type_order'] = df['Type'].map(sort_order)
                 df = df.sort_values(by=['Type_order', 'Strike']).drop(columns='Type_order')
+                row_attrs = df['__row_attr__'].tolist()  # save separately
+                df = df.drop(columns=['__row_attr__'])
                 # 5) Now generate HTML
                 html = df.to_html(classes="data", escape=False, index=False)
 
@@ -1142,13 +1144,14 @@ def positions(req):
                 #     f'data-account="{key}"'
                 # )
                 df['__row_attr__'] = (
-                    'data-token="' + df['Token'].astype(str) + '" '
-                    'data-exchange="' + df['Exchange'].astype(str) + '" '
-                    'data-account="' + key + '" '
-                    'data-price="' + df['Price'].astype(str) + '" '
-                    'data-quantity="' + df['Quantitys'].astype(str) + '" '
+                    'data-token="' + df['Token'].astype(str) + '" ' +
+                    'data-exchange="' + df['Exchange'].astype(str) + '" ' +
+                    'data-account="' + key + '" ' +
+                    'data-price="' + df['Price'].astype(str) + '" ' +
+                    'data-quantity="' + df['Quantitys'].astype(str) + '" ' +
                     'data-side="' + df['Side'].astype(str) + '"'
                 )
+                
                 df = df.drop(columns=['Price','Quantitys','Side'])
                 # 2) Mark LTP column cell with class="ltp-value"
                 df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
@@ -1178,12 +1181,13 @@ def positions(req):
                 df = df.drop(columns=['Token', 'Exchange'])
 
                 # 4) Save row attributes in a variable THEN drop column so it doesn't show
-                row_attrs = df['__row_attr__'].tolist()
-                df = df.drop(columns=['__row_attr__'])
 
                 sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
                 df['Type_order'] = df['Type'].map(sort_order)
-                df = df.sort_values(by=['Type_order', 'Strike']).drop(columns='Type_order')
+                df = df.sort_values(by=['Type_order', 'Strike'])
+                df=df.drop(columns='Type_order')
+                row_attrs = df['__row_attr__'].tolist()
+                df = df.drop(columns=['__row_attr__'])
 
                 # 5) Render table normally (no __row_attr__ visible)
                 html = df.to_html(
