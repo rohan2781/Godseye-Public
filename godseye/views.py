@@ -1,7 +1,8 @@
 from django.shortcuts import render,redirect
 from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
-from godseye.connectors import master_connection,return_ltp_cache
+# from godseye.connectors import master_connection,return_ltp_cache
+from .master_manager import master_manager
 from datetime import datetime,date
 import pandas as pd
 import json
@@ -16,9 +17,41 @@ from django.urls import reverse
 import time
 from django.middleware.csrf import get_token
 from django.core.cache import cache
+import redis
+
+r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+
 
 instrument_cache={}
 positions_data=[]
+
+def get_ltp_or_subscribe(exchange_code, token):
+
+    ltp_key = f"{exchange_code}_{token}"
+
+    # 1. Try to get cached LTP
+    ltp = r.get(ltp_key)
+    if ltp is not None:
+        return float(ltp)
+
+    # 2. Add subscription request to Redis SET
+    sub_key = f"{exchange_code}_{token}"
+    r.sadd("md_subscriptions", sub_key)
+
+    # 3. Give WS worker a short time to fetch and push LTP
+    time.sleep(0.10)
+
+    # 4. Try again
+    ltp = r.get(ltp_key)
+    if ltp is not None:
+        return float(ltp)
+
+    # 5. Still nothing → return 0
+    return 0
+
+
+# def get_ltp(exchange_code, token):
+#     return r.get(f"{exchange_code}_{token}")
 
 def get_instruments_cached(exchange):
     """Fetch and cache instruments for a given exchange."""
@@ -36,55 +69,59 @@ def get_instruments_cached(exchange):
     return df
 
 def fetch_ltp(positions):
-    response = master_connection()
-    ws_connection = response[3]
-    ltp_cache = response[4]
+    # response = master_connection()
+    # ws_connection = response[3]
+    # ltp_cache = response[4]
     result = {}
 
     for row in positions:
         key = f"{row['token']}_{row['exchange']}_{row['account']}"
         
         if re.search(r'B.*F.*O', row['exchange']):
-            ltp_key = f"7_{row['token']}"
-            if ltp_key in ltp_cache:
-                result[key] = ltp_cache[ltp_key]
-            else:
-                ws_connection.send(json.dumps({
-                    "a": "subscribe",
-                    "v": [[7, int(row['token'])]],
-                    "m": "marketdata"
-                }))
-                result[key] = 0
+            # ltp_key = f"7_{row['token']}"
+            # if ltp_key in ltp_cache:
+            #     result[key] = ltp_cache[ltp_key]
+            # else:
+            #     ws_connection.send(json.dumps({
+            #         "a": "subscribe",
+            #         "v": [[7, int(row['token'])]],
+            #         "m": "marketdata"
+            #     }))
+            ltp = get_ltp_or_subscribe(7,row['token'])
+            result[key] = ltp
         else:
-            ltp_key = f"2_{row['token']}"
-            if ltp_key in ltp_cache:
-                result[key] = ltp_cache[ltp_key]
-            else:
-                ws_connection.send(json.dumps({
-                    "a": "subscribe",
-                    "v": [[2, int(row['token'])]],
-                    "m": "marketdata"
-                }))
-                result[key] = 0
+            # ltp_key = f"2_{row['token']}"
+            # if ltp_key in ltp_cache:
+            #     result[key] = ltp_cache[ltp_key]
+            # else:
+            #     ws_connection.send(json.dumps({
+            #         "a": "subscribe",
+            #         "v": [[2, int(row['token'])]],
+            #         "m": "marketdata"
+            #     }))
+            ltp = get_ltp_or_subscribe(2,row['token'])
+            result[key] = ltp
 
     return result
 
-def subscribe_row(ws_connection, exchange, token):
+def subscribe_row(exchange, token):
     """Send subscription message based on key pattern."""
     if re.search(r'B.*F.*O', exchange):
-        subscribe_message = {
-            "a": "subscribe",
-            "v": [[7, int(token)]],
-            "m": "marketdata"
-        }
-        ws_connection.send(json.dumps(subscribe_message))
+        ltp = get_ltp_or_subscribe(7,int(token))
+        # subscribe_message = {
+        #     "a": "subscribe",
+        #     "v": [[7, int(token)]],
+        #     "m": "marketdata"
+        # }
+        # ws_connection.send(json.dumps(subscribe_message))
     else:
-        subscribe_message = {
-            "a": "subscribe",
-            "v": [[2, int(token)]],
-            "m": "marketdata"
-        }
-        ws_connection.send(json.dumps(subscribe_message))
+        ltp = get_ltp_or_subscribe(2,int(token))
+        # subscribe_message = {
+        #     "a": "subscribe",
+        #     "v": [[2, int(token)]],
+        #     "m": "marketdata"
+        # }
+        # ws_connection.send(json.dumps(subscribe_message))
 
 def get_ltp(req):
     if req.method == "POST":
@@ -100,12 +137,13 @@ def squareoff_strike(req):
             strike = req.POST.get("strike")
             body_data = json.loads(req.POST.get("data"))
             ## print("Body Data ",body_data)
-            response=master_connection()
-            masterclass_dict=response[0]
-            clients=response[1]
-            jainam_user_ids=response[2]
-            ws_connection=response[3]
-            ltp_cache=response[4]
+            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            # response=master_connection()
+            # masterclass_dict=response[0]
+            # clients=response[1]
+            # jainam_user_ids=response[2]
+            # ws_connection=response[3]
+            # ltp_cache=response[4]
             nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
             banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
             try:
@@ -150,37 +188,39 @@ def squareoff_strike(req):
                 iterator=0
                 while True:
                     if re.search(r'B.*F.*O',exchange):
-                        ltp_key = f"7_{token}"
-                        if ltp_key in ltp_cache:
-                            ltp=ltp_cache[ltp_key]
-                        else:
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[7, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            try:
-                                ltp=ltp_cache[ltp_key]
-                            except:
-                                ltp=0
+                        # ltp_key = f"7_{token}"
+                        # if ltp_key in ltp_cache:
+                        #     ltp=ltp_cache[ltp_key]
+                        # else:
+                        #     ws_connection.send(json.dumps({
+                        #         "a": "subscribe",
+                        #         "v": [[7, int(token)]],
+                        #         "m": "marketdata"
+                        #     }))
+                        #     try:
+                        #         ltp=ltp_cache[ltp_key]
+                        #     except:
+                        #         ltp=0
+                        ltp = get_ltp_or_subscribe(7,int(token))
                     else:
-                        ltp_key = f"2_{token}"
-                        if ltp_key in ltp_cache:
-                            ltp = ltp_cache[ltp_key]
-                        else:
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[2, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            try:
-                                ltp=ltp_cache[ltp_key]
-                            except:
-                                ltp=0
+                        # ltp_key = f"2_{token}"
+                        # if ltp_key in ltp_cache:
+                        #     ltp = ltp_cache[ltp_key]
+                        # else:
+                        #     ws_connection.send(json.dumps({
+                        #         "a": "subscribe",
+                        #         "v": [[2, int(token)]],
+                        #         "m": "marketdata"
+                        #     }))
+                        #     try:
+                        #         ltp=ltp_cache[ltp_key]
+                        #     except:
+                        #         ltp=0
+                        ltp = get_ltp_or_subscribe(2,int(token))
                     if ltp!=0 or iterator>=5:
                         break
                     time.sleep(1)
-                    ltp_cache=return_ltp_cache()
+                    # ltp_cache=return_ltp_cache()
                     iterator+=1
                 if ltp==0:
                     ## print('Rohan',ltp_cache)
@@ -292,12 +332,13 @@ def squareoff_strike(req):
 def squareoff(req,id):
     try:
         if req.session.get("logged_in"):
-            response=master_connection()
-            masterclass_dict=response[0]
-            clients=response[1]
-            jainam_user_ids=response[2]
-            ws_connection=response[3]
-            ltp_cache=response[4]
+            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            # response=master_connection()
+            # masterclass_dict=response[0]
+            # clients=response[1]
+            # jainam_user_ids=response[2]
+            # ws_connection=response[3]
+            # ltp_cache=response[4]
             nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
             banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
             try:
@@ -341,37 +382,39 @@ def squareoff(req,id):
             iterator=0
             while True:
                 if re.search(r'B.*F.*O',exchange):
-                    ltp_key = f"7_{token}"
-                    if ltp_key in ltp_cache:
-                        ltp=ltp_cache[ltp_key]
-                    else:
-                        ws_connection.send(json.dumps({
-                            "a": "subscribe",
-                            "v": [[7, int(token)]],
-                            "m": "marketdata"
-                        }))
-                        try:
-                            ltp=ltp_cache[ltp_key]
-                        except:
-                            ltp=0
+                    # ltp_key = f"7_{token}"
+                    # if ltp_key in ltp_cache:
+                    #     ltp=ltp_cache[ltp_key]
+                    # else:
+                    #     ws_connection.send(json.dumps({
+                    #         "a": "subscribe",
+                    #         "v": [[7, int(token)]],
+                    #         "m": "marketdata"
+                    #     }))
+                    #     try:
+                    #         ltp=ltp_cache[ltp_key]
+                    #     except:
+                    #         ltp=0
+                    ltp = get_ltp_or_subscribe(7,int(token))
                 else:
-                    ltp_key = f"2_{token}"
-                    if ltp_key in ltp_cache:
-                        ltp = ltp_cache[ltp_key]
-                    else:
-                        ws_connection.send(json.dumps({
-                            "a": "subscribe",
-                            "v": [[2, int(token)]],
-                            "m": "marketdata"
-                        }))
-                        try:
-                            ltp=ltp_cache[ltp_key]
-                        except:
-                            ltp=0
+                    # ltp_key = f"2_{token}"
+                    # if ltp_key in ltp_cache:
+                    #     ltp = ltp_cache[ltp_key]
+                    # else:
+                    #     ws_connection.send(json.dumps({
+                    #         "a": "subscribe",
+                    #         "v": [[2, int(token)]],
+                    #         "m": "marketdata"
+                    #     }))
+                    #     try:
+                    #         ltp=ltp_cache[ltp_key]
+                    #     except:
+                    #         ltp=0
+                    ltp = get_ltp_or_subscribe(2,int(token))
                 if ltp!=0 or iterator>=5:
                     break
                 time.sleep(1)
-                ltp_cache=return_ltp_cache()
+                # ltp_cache=return_ltp_cache()
                 iterator+=1
             if ltp==0:
                 ## print('Rohan',ltp_cache)
@@ -501,10 +544,11 @@ def pnl(req):
                 bfo_instruments = pd.DataFrame(bfo_instruments)
                 bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
                 bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-                response=master_connection()
-                masterclass_dict=response[0]
-                jainam_user_ids=response[2]
-                ws_connection=response[3]
+                masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+                # response=master_connection()
+                # masterclass_dict=response[0]
+                # jainam_user_ids=response[2]
+                # ws_connection=response[3]
                 pnl=pd.DataFrame(
                     columns=['Account','Instrument','Expiry','PNL']
                 )
@@ -550,7 +594,7 @@ def pnl(req):
                                 quantity = pos1['OpenBuyQuantity']
                                 price = pos1['BuyAveragePrice']
                                 side = 'BUY'
-                            t = Thread(target=subscribe_row, args=(ws_connection, exchange, pos1['ExchangeInstrumentId']))
+                            t = Thread(target=subscribe_row, args=(exchange, pos1['ExchangeInstrumentId']))
                             t.start()
                             # positions_data.append(key,)
                             accounts.append((key, instrument, expiry,  side, abs(float(quantity)), abs(float(price)),pos1['ExchangeInstrumentId'],exchange))
@@ -601,14 +645,14 @@ def pnl(req):
                                 quantity = abs(int(row['net_quantity']))
                                 price = average_trade_price
                                 side = 'SELL'
-                                
+
                             if re.search(r'B.*F.*O', row['exchange']):
                                 exchange='BFO'
                             else:
                                 exchange='NFO'
                             # positions_data.append(key,)
                             # Append to the accounts list
-                            t = Thread(target=subscribe_row, args=(ws_connection, exchange, row['instrument_token']))
+                            t = Thread(target=subscribe_row, args=(exchange, row['instrument_token']))
                             t.start()
                             accounts.append((key, instrument, expiry, side, abs(float(quantity)), abs(float(price)),row['instrument_token'],exchange))
                 
@@ -681,12 +725,13 @@ def positions(req):
             bfo_instruments = get_instruments_cached("BFO")
             bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
             bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-            response=master_connection()
-            masterclass_dict=response[0]
-            clients=response[1]
-            jainam_user_ids=response[2]
-            ws_connection=response[3]
-            ltp_cache=response[4]
+            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            # response=master_connection()
+            # masterclass_dict=response[0]
+            # clients=response[1]
+            # jainam_user_ids=response[2]
+            # ws_connection=response[3]
+            # ltp_cache=response[4]
             client_list = []
             arr = []
             titles = []
@@ -757,31 +802,33 @@ def positions(req):
                         exchange=pos1["ExchangeSegment"]
                         token=pos1['ExchangeInstrumentId']
                         if re.search(r'B.*F.*O', exchange):
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[7, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            ltp_key = f"7_{token}"
+                            ltp = get_ltp_or_subscribe(7,token)
+                            # ws_connection.send(json.dumps({
+                            #     "a": "subscribe",
+                            #     "v": [[7, int(token)]],
+                            #     "m": "marketdata"
+                            # }))
+                            # ltp_key = f"7_{token}"
                         else:
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[2, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            ltp_key = f"2_{token}"
-                        iterator=0
-                        while iterator<2:
-                            if ltp_key in ltp_cache:
-                                iterator=0
-                                break
-                            time.sleep(1)
-                            ltp_cache=return_ltp_cache() 
-                            iterator+=1
-                        try:
-                            ltp=ltp_cache[ltp_key]
-                        except:
-                            ltp=0
+                            ltp = get_ltp_or_subscribe(2,token)
+                            # ws_connection.send(json.dumps({
+                            #     "a": "subscribe",
+                            #     "v": [[2, int(token)]],
+                            #     "m": "marketdata"
+                            # }))
+                            # ltp_key = f"2_{token}"
+                        # iterator=0
+                        # while iterator<2:
+                        #     if ltp_key in ltp_cache:
+                        #         iterator=0
+                        #         break
+                        #     time.sleep(1)
+                        #     ltp_cache=return_ltp_cache() 
+                        #     iterator+=1
+                        # try:
+                        #     ltp=ltp_cache[ltp_key]
+                        # except:
+                        #     ltp=0
                         if float(pos1['OpenSellQuantity']) != 0:
                             quantity = pos1['OpenSellQuantity']
                             price = pos1['SellAveragePrice']
@@ -880,31 +927,33 @@ def positions(req):
                         token = str(row["instrument_token"])
                         exchange=str(row['exchange'])
                         if re.search(r'B.*F.*O', exchange):
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[7, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            ltp_key = f"7_{token}"
+                            ltp = get_ltp_or_subscribe(7,int(token))
+                            # ws_connection.send(json.dumps({
+                            #     "a": "subscribe",
+                            #     "v": [[7, int(token)]],
+                            #     "m": "marketdata"
+                            # }))
+                            # ltp_key = f"7_{token}"
                         else:
-                            ws_connection.send(json.dumps({
-                                "a": "subscribe",
-                                "v": [[2, int(token)]],
-                                "m": "marketdata"
-                            }))
-                            ltp_key = f"2_{token}"
-                        iterator=0
-                        while iterator<2:
-                            if ltp_key in ltp_cache:
-                                iterator=0
-                                break
-                            time.sleep(1)
-                            ltp_cache=return_ltp_cache() 
-                            iterator+=1
-                        try:
-                            ltp=ltp_cache[ltp_key]
-                        except:
-                            ltp=0
+                            ltp = get_ltp_or_subscribe(2,int(token))
+                            # ws_connection.send(json.dumps({
+                            #     "a": "subscribe",
+                            #     "v": [[2, int(token)]],
+                            #     "m": "marketdata"
+                            # }))
+                            # ltp_key = f"2_{token}"
+                        # iterator=0
+                        # while iterator<2:
+                        #     if ltp_key in ltp_cache:
+                        #         iterator=0
+                        #         break
+                        #     time.sleep(1)
+                        #     ltp_cache=return_ltp_cache() 
+                        #     iterator+=1
+                        # try:
+                        #     ltp=ltp_cache[ltp_key]
+                        # except:
+                        #     ltp=0
 
                         filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
                         
@@ -1019,7 +1068,7 @@ def positions(req):
                 for index, row in df.iterrows():
                     exchange = row['Exchange']  # or whatever column holds the key
                     token = row['Token']
-                    t = Thread(target=subscribe_row, args=(ws_connection, exchange, token))
+                    t = Thread(target=subscribe_row, args=(exchange, token))
                     t.start()
                     threads.append(t)
 
@@ -1121,7 +1170,7 @@ def positions(req):
                 for index, row in df.iterrows():
                     exchange = row['Exchange']  # or whatever column holds the key
                     token = row['Token']
-                    t = Thread(target=subscribe_row, args=(ws_connection, exchange, token))
+                    t = Thread(target=subscribe_row, args=(exchange, token))
                     t.start()
                     threads.append(t)
                     
@@ -1173,12 +1222,13 @@ def positions(req):
 def home(req):
     try:
         if req.session.get("logged_in"):
-            response=master_connection()
-            masterclass_dict=response[0]
-            clients=response[1]
-            jainam_user_ids=response[2]
-            ws_connection=response[3]
-            ltp_cache=response[4]
+            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            # response=master_connection()
+            # masterclass_dict=response[0]
+            # clients=response[1]
+            # jainam_user_ids=response[2]
+            # ws_connection=response[3]
+            # ltp_cache=response[4]
             nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
             banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
             try:
@@ -1248,38 +1298,40 @@ def home(req):
                     while True:
                         exchange_token = temp_instruments['exchange_token'].iloc[0]
                         if exchange_type=='BFO':
-                            ltp_key = f"7_{exchange_token}"
-                            if ltp_key in ltp_cache:
-                                ltp=ltp_cache[ltp_key]
-                            else:
-                                ws_connection.send(json.dumps({
-                                        "a": "subscribe",
-                                        "v": [[7, int(exchange_token)]],
-                                        "m": "marketdata"
-                                }))
-                                try:
-                                    ltp=ltp_cache[ltp_key]
-                                except:
-                                    ltp=0
+                            ltp = get_ltp_or_subscribe(7,exchange_token)
+                            # ltp_key = f"7_{exchange_token}"
+                            # if ltp_key in ltp_cache:
+                            #     ltp=ltp_cache[ltp_key]
+                            # else:
+                            #     ws_connection.send(json.dumps({
+                            #             "a": "subscribe",
+                            #             "v": [[7, int(exchange_token)]],
+                            #             "m": "marketdata"
+                            #     }))
+                            #     try:
+                            #         ltp=ltp_cache[ltp_key]
+                            #     except:
+                            #         ltp=0
                         else:
-                            ltp_key = f"2_{exchange_token}"
-                            if ltp_key in ltp_cache:
-                                ltp = ltp_cache[ltp_key]
-                            else:
-                                ws_connection.send(json.dumps({
-                                        "a": "subscribe",
-                                        "v": [[2, int(exchange_token)]],
-                                        "m": "marketdata"
-                                }))
-                                try:
-                                    ltp=ltp_cache[ltp_key]
-                                except:
-                                    ltp=0
+                            ltp = get_ltp_or_subscribe(2,exchange_token)
+                            # ltp_key = f"2_{exchange_token}"
+                            # if ltp_key in ltp_cache:
+                            #     ltp = ltp_cache[ltp_key]
+                            # else:
+                            #     ws_connection.send(json.dumps({
+                            #             "a": "subscribe",
+                            #             "v": [[2, int(exchange_token)]],
+                            #             "m": "marketdata"
+                            #     }))
+                            #     try:
+                            #         ltp=ltp_cache[ltp_key]
+                            #     except:
+                            #         ltp=0
                         if ltp!=0 or iterator>=5:
                             break
                         if int(price)==0:
                             time.sleep(1)
-                            ltp_cache=return_ltp_cache()
+                            # ltp_cache=return_ltp_cache()
                         iterator+=1
 
                     if transaction == "BUY":
@@ -1442,6 +1494,7 @@ def home(req):
         return redirect('/home')
 
 def login(req):
+    r.flushdb()  # or selectively delete keys
     req.session['logged_in']=False
     if req.method=='POST':
         username=req.POST['username'].lower()
@@ -1456,6 +1509,7 @@ def login(req):
     return render(req,'login.html')
 
 def logout(req):
+    r.flushdb()  # or selectively delete keys
     req.session['logged_in']=False
     return redirect('/login')
 
