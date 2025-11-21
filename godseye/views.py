@@ -535,7 +535,7 @@ def find_expiry(nfo,token,instrument):
         nfo = nfo[nfo["code"] == str(token)]
         return dt.datetime.fromtimestamp(nfo.iloc[0]["expiry"]).strftime("%d-%m-%Y")
 
-def pnl(req):
+def pnl(req): 
     try:
         global positions_data
         if req.session.get("logged_in"):
@@ -623,28 +623,30 @@ def pnl(req):
                             # Find the expiry using your custom function
                             expiry = find_expiry(nfo, row["instrument_token"], instrument)
                             
-                            # Determine trade direction (Buy or Sell) and extract quantity and price
-                            # if row['cf_sell_quantity'] != 0:
-                            #     quantity = row['cf_sell_quantity']
-                            #     price = row['actual_average_sell_price']
-                            #     side = 'SELL'
-                            # else:
-                            #     quantity = row['cf_buy_quantity']
-                            #     price = row['actual_average_buy_price']
-                            #     side = 'BUY'
-                            filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
-                        
-                            # total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
-                            average_trade_price = filtered_trades['trade_price'].mean()
+                            try:
+                                filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
+                            
+                                # total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
+                                average_trade_price = filtered_trades['trade_price'].mean()
 
-                            if row['net_quantity']>0:
-                                quantity = abs(int(row['net_quantity']))
-                                price = average_trade_price
-                                side = 'BUY'
-                            else:
-                                quantity = abs(int(row['net_quantity']))
-                                price = average_trade_price
-                                side = 'SELL'
+                                if row['net_quantity']>0:
+                                    quantity = abs(int(row['net_quantity']))
+                                    price = average_trade_price
+                                    side = 'BUY'
+                                else:
+                                    quantity = abs(int(row['net_quantity']))
+                                    price = average_trade_price
+                                    side = 'SELL'
+                            except:
+                                # Determine trade direction (Buy or Sell) and extract quantity and price
+                                if row['cf_sell_quantity'] != 0:
+                                    quantity = row['cf_sell_quantity']
+                                    price = row['actual_average_sell_price']
+                                    side = 'SELL'
+                                else:
+                                    quantity = row['cf_buy_quantity']
+                                    price = row['actual_average_buy_price']
+                                    side = 'BUY'
 
                             if re.search(r'B.*F.*O', row['exchange']):
                                 exchange='BFO'
