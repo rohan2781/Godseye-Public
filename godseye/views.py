@@ -18,6 +18,10 @@ import time
 from django.middleware.csrf import get_token
 from django.core.cache import cache
 import redis
+import os
+from django.conf import settings
+import platform
+
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
@@ -1499,8 +1503,37 @@ def home(req):
         return redirect('/home')
 
 def login(req):
-    r.flushdb()  # or selectively delete keys
-    req.session['logged_in']=False
+    r.flushall()
+
+    session_file_path = settings.SESSION_FILE_PATH
+
+    # Make sure the session file path exists
+    if os.path.exists(session_file_path):
+        # List all files in the session directory
+        for filename in os.listdir(session_file_path):
+            file_path = os.path.join(session_file_path, filename)
+            
+            # Check if it's a session file (e.g., starts with 'django_session_')
+            if os.path.isfile(file_path):
+                os.remove(file_path)  # Remove the session file
+
+    # # Clear the session data in Django
+    # req.session.clear()  # This removes the session data from the Django session store
+
+    # # Reset the 'logged_in' status
+    # req.session['logged_in'] = False
+
+    if platform.system() == "Windows":
+        # Restart Redis on Windows
+        pass
+    else:
+        # Restart Redis on Linux (Ubuntu)
+        try:
+            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+            print("Redis restarted on Ubuntu")
+        except Exception as e:
+            print(f"Error restarting Redis on Ubuntu: {e}")
+
     if req.method=='POST':
         username=req.POST['username'].lower()
         password=req.POST['password']
@@ -1514,10 +1547,68 @@ def login(req):
     return render(req,'login.html')
 
 def logout(req):
-    r.flushdb()  # or selectively delete keys
-    req.session['logged_in']=False
+    r.flushall()
+
+    session_file_path = settings.SESSION_FILE_PATH
+
+    # Make sure the session file path exists
+    if os.path.exists(session_file_path):
+        # List all files in the session directory
+        for filename in os.listdir(session_file_path):
+            file_path = os.path.join(session_file_path, filename)
+            
+            # Check if it's a session file (e.g., starts with 'django_session_')
+            if filename.startswith("django_session_") and os.path.isfile(file_path):
+                os.remove(file_path)  # Remove the session file
+
+    # Clear the session data in Django
+    # req.session.clear()  # This removes the session data from the Django session store
+
+    # # Reset the 'logged_in' status
+    # req.session['logged_in'] = False
+
+    if platform.system() == "Windows":
+        # Restart Redis on Windows
+        pass
+    else:
+        # Restart Redis on Linux (Ubuntu)
+        try:
+            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+            print("Redis restarted on Ubuntu")
+        except Exception as e:
+            print(f"Error restarting Redis on Ubuntu: {e}")
+
     return redirect('/login')
 
 def index(req):
-    req.session['logged_in']=False
+    r.flushall()
+
+    session_file_path = settings.SESSION_FILE_PATH
+
+    # Make sure the session file path exists
+    if os.path.exists(session_file_path):
+        # List all files in the session directory
+        for filename in os.listdir(session_file_path):
+            file_path = os.path.join(session_file_path, filename)
+            
+            # Check if it's a session file (e.g., starts with 'django_session_')
+            if filename.startswith("django_session_") and os.path.isfile(file_path):
+                os.remove(file_path)  # Remove the session file
+
+    # Clear the session data in Django
+    # req.session.clear()  # This removes the session data from the Django session store
+
+    # # Reset the 'logged_in' status
+    # req.session['logged_in'] = False
+
+    if platform.system() == "Windows":
+        pass
+    else:
+        # Restart Redis on Linux (Ubuntu)
+        try:
+            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+            print("Redis restarted on Ubuntu")
+        except Exception as e:
+            print(f"Error restarting Redis on Ubuntu: {e}")
+
     return redirect('/login')
