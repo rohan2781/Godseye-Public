@@ -5,3 +5,4 @@ selenium
 onetimepass
 requests-oauthlib
 openpyxl
+redis

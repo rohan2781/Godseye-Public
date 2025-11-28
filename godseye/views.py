@@ -232,6 +232,14 @@ def squareoff_strike(req):
                     return redirect('/positions')
                 order_qty=[]
                 order_side="BUY" if int(quantity) < 0 else "SELL"
+                if order_side=='BUY' and instrument=='NIFTY':
+                    ltp+=7
+                elif order_side=='SELL' and instrument=='NIFTY':
+                    ltp-=7
+                elif order_side=='BUY':
+                    ltp+=7
+                else:
+                    ltp-=7
                 quantity=abs(int(quantity))
                 match instrument:
                     case 'BANKNIFTY':
@@ -426,6 +434,14 @@ def squareoff(req,id):
                 return redirect('/positions')
             order_qty=[]
             order_side="BUY" if int(quantity) < 0 else "SELL"
+            if order_side=='BUY' and instrument=='NIFTY':
+                ltp+=7
+            elif order_side=='SELL' and instrument=='NIFTY':
+                ltp-=7
+            elif order_side=='BUY':
+                ltp+=7
+            else:
+                ltp-=7
             quantity=abs(int(quantity))
             match instrument:
                 case 'BANKNIFTY':
