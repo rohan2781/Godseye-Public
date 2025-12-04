@@ -879,7 +879,7 @@ def positions(req):
                         pos["SquareOff"] = (
                             f'<form action="{url}" method="POST" style="display:inline;">'
                             f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                            '<button type="submit">Squareoff</button>'
+                            '<button type="submit" class="squareoff-btn">Squareoff</button>'
                             '</form>'
                         )
                         # url_strike=reverse('squareoff_strike')
@@ -1033,7 +1033,7 @@ def positions(req):
                     lambda row: (
                         f'<form action="{row["url"]}" method="POST" style="display:inline;">'
                         f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                        '<button type="submit">Squareoff</button>'
+                        '<button type="submit" class="squareoff-btn">Squareoff</button>'
                         '</form>'
                     ),
                     axis=1
@@ -1113,7 +1113,7 @@ def positions(req):
                             f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                             f'<input type="hidden" name="strike" value="{strike}"/>'
                             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit">Squareoff Strikes</button>'
+                            '<button type="submit" class="squareoff-btn">Squareoff Strikes</button>'
                             '</form>'
                         )
                     return ""
@@ -1186,7 +1186,7 @@ def positions(req):
                             f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                             f'<input type="hidden" name="strike" value="{strike}"/>'
                             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit">Squareoff Strikes</button>'
+                            '<button type="submit" class="squareoff-btn">Squareoff Strikes</button>'
                             '</form>'
                         )
                     return ""
