@@ -1,4 +1,11 @@
-ssh -i "C:\Users\alp\Downloads\godseye.pem" ubuntu@43.204.15.204
+ayusshmittaal
+
+chaitanyapadachhoffers@gmail.com
+ALgo@123
+
+
+ssh -i "C:\Users\Rohan\Downloads\godseye.pem" ubuntu@43.204.15.204
+source myenv/bin/activate
 sudo nano /etc/nginx/sites-available/godseye
 sudo nano /etc/systemd/system/gunicorn.service
 sudo systemctl daemon-reload
@@ -7,7 +14,31 @@ sudo systemctl status gunicorn
 sudo systemctl restart nginx
 
 sudo cat /var/log/nginx/error.log
+sudo cat /var/log/nginx/access.log
 journalctl -u gunicorn.service
 sudo journalctl -u gunicorn -n 100
 
+git status
+git stash
+git pull origin main
+git stash pop
 gittoken-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
+
+redis-cli FLUSHALL
+
+sudo nano /etc/systemd/system/ws.service
+sudo systemctl daemon-reload
+sudo systemctl restart ws.service
+sudo systemctl enable ws.service
+sudo systemctl status ws.service
+sudo journalctl -u ws.service -f
+
+
+posgres install
+sudo nano /etc/postgresql/16/main/postgresql.conf
+sudo nano /etc/postgresql/16/main/pg_hba.conf
+sudo -u postgres psql
+CREATE DATABASE Godseye;
+\c Godseye
+\d "TradeBook" ## to verify if table created
+sudo systemctl start postgresql

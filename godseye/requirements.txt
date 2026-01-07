@@ -6,3 +6,4 @@ onetimepass
 requests-oauthlib
 openpyxl
 redis
+psycopg2

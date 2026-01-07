@@ -56,9 +56,9 @@ class MasterTrustUser:
         self.token_,self.auth_token = initialize(self.username,self.password,self.twofa)
         self.contracts = dict()
         self.exchanges = ['NSE','NFO','MCX','BFO']
-        self.get_master_contracts()
+        # self.get_master_contracts()
         self.allcontracts=pd.DataFrame()
-        self.get_all_contracts()
+        # self.get_all_contracts()
 
     def get_all_contracts(self):
         # Step 1: Fetch the ZIP file from the API

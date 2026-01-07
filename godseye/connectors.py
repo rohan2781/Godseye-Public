@@ -40,20 +40,33 @@ class MasterConnectionManager:
         Reads shared info from Redis if available.
         """
         try:
-            cached_accounts = r.get("accounts_global")
-            cached_user_ids = r.get("jainam_user_ids")
-            if cached_accounts and cached_user_ids:
-                self.accounts_global = json.loads(cached_accounts)
-                self.jainam_user_ids = json.loads(cached_user_ids)
+            # cached_accounts = r.get("accounts_global")
+            # cached_user_ids = r.get("jainam_user_ids")
+            # if cached_accounts and cached_user_ids:
+            #     self.accounts_global = json.loads(cached_accounts)
+            #     self.jainam_user_ids = json.loads(cached_user_ids)
             
-            if self.masterclass_dict and self.accounts_global and self.jainam_user_ids and (datetime.now() - self.refresh_time < timedelta(hours=6)):
-                return self.masterclass_dict,self.accounts_global,self.jainam_user_ids
+            # if self.masterclass_dict and self.accounts_global and self.jainam_user_ids and (datetime.now() - self.refresh_time < timedelta(hours=6)):
+            #     return self.masterclass_dict,self.accounts_global,self.jainam_user_ids
+            try:
+                cached_accounts = r.get("accounts_global")
+                cached_user_ids = r.get("jainam_user_ids")
+                cached_refresh = r.get("refresh_time")
+                if cached_accounts and cached_user_ids and cached_refresh:
+                    if time.time() - float(cached_refresh) < 6 * 3600:
+                        self.accounts_global = json.loads(cached_accounts)
+                        self.jainam_user_ids = json.loads(cached_user_ids)
+                        return self.masterclass_dict, self.accounts_global, self.jainam_user_ids
+            except:
+                pass
             
-
-            r.flushdb()  # or selectively delete keys
+            # Only rebuild when cache is expired
+            # r.flushdb()
+            r.set('logged_in','1')
             self._load_accounts_from_file()
-            self.refresh_time = datetime.now()
+            r.set("refresh_time", time.time())
             return self.masterclass_dict, self.accounts_global, self.jainam_user_ids
+
         
         except Exception as e:
             # print("Error in master_connection:", e)
@@ -79,9 +92,11 @@ class MasterConnectionManager:
             if 'jainam' in row['Name'].lower():
                 xt = JXTSConnect(row['App ID'], row['App Secret'], "WEBAPI")
                 xt.hostlookup_login()
-                res = xt.interactive_login()
-                masterclass_instance = xt
+                xt.interactive_login()
+                # masterclass_instance = xt
+                # self.jainam_user_ids[row["Name"]] = row["User ID"]
                 self.jainam_user_ids[row["Name"]] = row["User ID"]
+                self.masterclass_dict[row["Name"]] = xt
             else:
                 masterclass_instance = MasterTrustUser(
                     username=row["User ID"],
@@ -91,14 +106,19 @@ class MasterConnectionManager:
                     app_id=row["App ID"],
                     app_secret=row["App Secret"],
                 )
-            self.masterclass_dict[row["Name"]] = masterclass_instance
+                # if r.get('set_contract')=='0':
+                #     t = threading.Thread(target=call_contracts, args=(masterclass_instance,), daemon=True)
+                #     t.start()
+                    
+                self.masterclass_dict[row["Name"]] = masterclass_instance
+            # self.masterclass_dict[row["Name"]] = masterclass_instance
         # Store serializable info in Redis for other workers
         for key in self.masterclass_dict:
             if 'jainam' not in key.lower():
                 auth_token=self.masterclass_dict[key].auth_token
                 base_url=self.masterclass_dict[key].base_url.replace('https://','')
                 ws_url = f"wss://{base_url}/ws/v1/feeds?token={auth_token}"
-        r.set("ws_url", ws_url)
+                r.set("ws_url", ws_url)
         r.set("accounts_global", json.dumps(self.accounts_global))
         r.set("jainam_user_ids", json.dumps(self.jainam_user_ids))
 

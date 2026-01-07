@@ -97,8 +97,12 @@ WSGI_APPLICATION = 'godseye.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'Godseye',
+        'USER': 'postgres',
+        'PASSWORD': 'admin',
+        'HOST': 'localhost',   # RDS endpoint or EC2 IP
+        'PORT': '5432',
     }
 }
 

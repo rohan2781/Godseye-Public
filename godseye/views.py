@@ -1,3 +1,4 @@
+from django.db import close_old_connections
 from django.shortcuts import render,redirect
 from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
@@ -12,7 +13,7 @@ import math
 from threading import Thread
 import datetime as dt
 import re
-from collections import defaultdict
+from collections import defaultdict, deque
 from django.urls import reverse
 import time
 from django.middleware.csrf import get_token
@@ -21,13 +22,253 @@ import redis
 import os
 from django.conf import settings
 import platform
+from .models import *
+import requests
+import pickle
 
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
-
 instrument_cache={}
 positions_data=[]
+
+import time
+
+def maybe_start_account_jobs(masterclass_dict):
+    now = time.time()
+
+    try:
+        last_run = r.get("account_jobs_last_run")
+        if last_run and now - float(last_run) < 300:  # every 300 sec
+            return
+
+        # distributed lock (multi-worker safe)
+        if not r.set("account_jobs_lock", 1, nx=True, ex=55):
+            return
+    except:
+        pass
+
+    try:
+        for key in masterclass_dict:
+            start_background_job(key, masterclass_dict[key])
+        
+                # Get today's date
+            today = date.today()
+            # Filter rows with expiry date less than today and delete them
+            TradeBook.objects.filter(expiry__lt=today).delete()
+
+        r.set("account_jobs_last_run", now)
+    finally:
+        r.delete("account_jobs_lock")
+
+def get_contracts():
+    current_folder = os.path.dirname(os.path.abspath(__file__))
+    print(current_folder)
+    # List all files starting with 'contracts'
+    contract_files = [f for f in os.listdir(current_folder)
+                    if os.path.isfile(os.path.join(current_folder, f)) and f.startswith("contracts")]
+    if (contract_files[0].split('_')[2].split('.')[0]==datetime.today().strftime("%d%m%Y")):
+        print('heya')
+        # file_path = os.path.join(current_folder, 'contracts_NSE_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+        # nse=pd.read_csv(file_path)
+        file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+        print(file_path)
+        nfo=pd.read_csv(file_path)
+        return nfo
+        # r.set('nse', pickle.dumps(nse))
+        # r.set('nfo', pickle.dumps(nfo))
+
+    else:
+        for f in contract_files:
+            file_to_delete = os.path.join(current_folder, f)
+            try:
+                os.remove(file_to_delete)
+                print(f"Deleted: {file_to_delete}")
+            except Exception as e:
+                print(f"Error deleting {file_to_delete}: {e}")
+        print("Refreshing global data from APIs...")
+        contracts={}
+        # nse_contracts = json.loads(requests.get('https://masterswift.mastertrust.co.in/api/v2/contracts.json?exchanges=NSE').text)
+        # contracts['NSE'] = pd.DataFrame()
+        # for x in nse_contracts:
+        #     # self.contracts['NSE'] = self.contracts['NSE'].append(pd.DataFrame(nse_contracts[x]),ignore_index = True)
+        #     contracts['NSE'] = pd.concat([pd.DataFrame(nse_contracts[x]) for x in nse_contracts], ignore_index=True)
+        #     file_path = os.path.join(current_folder, 'contracts_NSE_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+        #     contracts['NSE'].to_csv(file_path)
+        #     r.set('nse', pickle.dumps(contracts['NSE']))
+
+        nfo_contracts = json.loads(requests.get('https://masterswift.mastertrust.co.in/api/v2/contracts.json?exchanges=NFO').text)
+        contracts['NFO'] = pd.DataFrame()
+        for x in nfo_contracts:
+            # self.contracts['NFO'] = self.contracts['NFO'].append(pd.DataFrame(nfo_contracts[x]),ignore_index = True)
+            contracts['NFO'] = pd.concat([pd.DataFrame(nfo_contracts[x]) for x in nfo_contracts], ignore_index=True)
+        file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+        print(file_path)
+        contracts['NFO'].to_csv(file_path)
+        return contracts['NFO']
+            # r.set('nfo', pickle.dumps(contracts['NFO']))
+
+def generate_closed_pnl(account_name):
+    trades = (
+        TradeBook.objects
+        .filter(accountId=account_name)
+        .order_by('instrument', 'tradeTime')
+        .values(
+            'instrument',
+            'tradeTime',
+            'side',          # 'BUY' / 'SELL'
+            'qty',
+            'price'
+        )
+    )
+    if trades.exists():
+        grouped_trades = defaultdict(list)
+
+        for trade in trades:
+            key_ie = (trade['instrument'])
+            grouped_trades[key_ie].append(trade)
+        
+        results = []
+
+        for (instrument), trade_list in grouped_trades.items():
+            buy_queue = deque()
+
+            for trade in trade_list:
+                if trade['side'] == 'BUY':
+                    buy_queue.append({
+                        'qty': trade['qty'],
+                        'price': trade['price']
+                    })
+
+                elif trade['side'] == 'SELL':
+                    sell_qty = trade['qty']
+                    sell_price = trade['price']
+
+                    while sell_qty > 0 and buy_queue:
+                        buy = buy_queue[0]
+
+                        matched_qty = min(sell_qty, buy['qty'])
+
+                        pnl = (sell_price - buy['price']) * matched_qty
+
+                        results.append({
+                            'instrument': instrument,
+                            'pnl': pnl
+                        })
+
+                        buy['qty'] -= matched_qty
+                        sell_qty -= matched_qty
+
+                        if buy['qty'] == 0:
+                            buy_queue.popleft()
+        final_pnl = defaultdict(float)
+        for row in results:
+            key_ie = (row['instrument'])
+            final_pnl[key_ie] += float(row['pnl'])
+        df_final = pd.DataFrame([
+            {
+                'instrument': instrument,
+                'total_pnl': pnl
+            }
+            for (instrument), pnl in final_pnl.items()
+        ],columns=['instrument','total_pnl'])
+
+        # Optional: sort nicely
+        df_final = df_final.sort_values(by=['instrument']).reset_index(drop=True)
+    else:
+        df_final=pd.DataFrame(columns=['instrument','total_pnl'])
+
+    return df_final
+
+def normalize_order(order, account_key):
+    """
+    Convert different order formats into TradeBook-compatible dict
+    """
+    kite_instruments = get_instruments_cached("NFO")
+    bfo_instruments = get_instruments_cached("BFO")
+    kite_instruments['exchange_token'] = kite_instruments['exchange_token'].astype(str)
+    bfo_instruments['exchange_token'] = bfo_instruments['exchange_token'].astype(str)
+    if 'jainam' in account_key:
+        if order['ExchangeSegment']=='NSEFO':
+            expiry = kite_instruments.loc[kite_instruments['exchange_token'] == str(order['ExchangeInstrumentID']),'expiry'].values[0]
+        else:
+            expiry = bfo_instruments.loc[bfo_instruments['exchange_token'] == str(order['ExchangeInstrumentID']),'expiry'].values[0]
+        return {
+            "orderId": order["AppOrderID"],
+            "tradeTime": datetime.strptime(order["OrderGeneratedDateTime"], "%d-%m-%Y %H:%M:%S"),
+            "accountId": account_key,
+            "instrument": order["ExchangeInstrumentID"],
+            "side": order["OrderSide"],
+            "price": order["OrderPrice"],
+            "qty": order["OrderQuantity"],
+            "finalPrice": float(float(order["OrderPrice"])*float(order["OrderQuantity"])),
+            "expiry":expiry
+        }
+    else:
+        # non-jainam structure
+        if order['exchange']=='NFO':
+            expiry = kite_instruments.loc[kite_instruments['exchange_token'] == str(order['instrument_token']),'expiry'].values[0]
+        else:
+            expiry = bfo_instruments.loc[bfo_instruments['exchange_token'] == str(order['instrument_token']),'expiry'].values[0]
+        return {
+            "orderId": order["oms_order_id"],
+            "tradeTime": datetime.fromtimestamp(int(order['order_entry_time'])),
+            "accountId": account_key,
+            "instrument": order["instrument_token"],
+            "side": order["order_side"],
+            "price": order["average_price"],
+            "qty": order["quantity"],
+            "finalPrice": float(float(order["average_price"])*float(order["quantity"])),
+            "expiry":expiry
+        }
+
+def fetch_and_insert_orders(account_key, client):
+    # Safe DB handling for threads
+    close_old_connections()
+
+    # 1️⃣ Fetch orders (API call in thread)
+    if 'jainam' not in account_key.lower():
+        try:
+            orders = client.get_orders('completed')
+        except:
+            orders=pd.DataFrame()
+    else:
+        try:
+            orders_dict = client.get_order_book()
+            df_orders = pd.DataFrame(orders_dict["result"])
+            orders = df_orders[df_orders["OrderStatus"] == "Filled"].reset_index(drop=True)
+        except:
+            orders=pd.DataFrame()
+
+    if orders.empty:
+        return
+
+    # # 2️⃣ Fetch existing orderIds ONCE
+    # existing_ids = set(
+    #     TradeBook.objects.values_list("orderId", flat=True)
+    # )
+
+    # 3️⃣ Prepare rows
+    new_rows = []
+    print(account_key)
+    for _, order in orders.iterrows():
+        normalized = normalize_order(order, account_key.lower())
+        new_rows.append(TradeBook(**normalized))
+
+    # 4️⃣ Bulk insert
+    if new_rows:
+        TradeBook.objects.bulk_create(
+            new_rows,
+            ignore_conflicts=True
+        )
+    
+def start_background_job(account_key, client):
+    t = Thread(
+        target=fetch_and_insert_orders,
+        args=(account_key, client),
+        daemon=True
+    )
+    t.start()
 
 def get_ltp_or_subscribe(exchange_code, token):
 
@@ -137,11 +378,13 @@ def get_ltp(req):
         
 def squareoff_strike(req):
     try:
-        if req.session.get("logged_in"):
+        # if req.session.get("logged_in"):
+        if r.get('logged_in')=='1':
             strike = req.POST.get("strike")
             body_data = json.loads(req.POST.get("data"))
             ## print("Body Data ",body_data)
             masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            maybe_start_account_jobs(masterclass_dict)
             # response=master_connection()
             # masterclass_dict=response[0]
             # clients=response[1]
@@ -343,8 +586,10 @@ def squareoff_strike(req):
 
 def squareoff(req,id):
     try:
-        if req.session.get("logged_in"):
+        # if req.session.get("logged_in"):
+        if r.get('logged_in')=='1':
             masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            maybe_start_account_jobs(masterclass_dict)
             # response=master_connection()
             # masterclass_dict=response[0]
             # clients=response[1]
@@ -552,19 +797,21 @@ def find_expiry(nfo,token,instrument):
         nfo = nfo[nfo["exchange_token"].astype(str) == str(token)]
         return nfo.iloc[0]["expiry"].strftime("%d-%m-%Y")
     else:
-        nfo = nfo[nfo["code"] == str(token)]
+        nfo = nfo[nfo["code"].astype(str).str.strip() == str(token).strip()]
         return dt.datetime.fromtimestamp(nfo.iloc[0]["expiry"]).strftime("%d-%m-%Y")
 
 def pnl(req): 
     try:
         global positions_data
-        if req.session.get("logged_in"):
+        # if req.session.get("logged_in"):
+        if r.get('logged_in')=='1':
             if not req.headers.get('x-requested-with') == 'XMLHttpRequest':
                 bfo_instruments = get_instruments_cached("BFO")
                 bfo_instruments = pd.DataFrame(bfo_instruments)
                 bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
                 bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
                 masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+                maybe_start_account_jobs(masterclass_dict)
                 # response=master_connection()
                 # masterclass_dict=response[0]
                 # jainam_user_ids=response[2]
@@ -638,7 +885,8 @@ def pnl(req):
                             if instrument == 'SENSEX':
                                 nfo = bfo_instruments
                             else:
-                                nfo = masterclass_dict[key].contracts["NFO"]
+                                # nfo = masterclass_dict[key].contracts["NFO"]
+                                nfo=get_contracts()
                             
                             # Find the expiry using your custom function
                             expiry = find_expiry(nfo, row["instrument_token"], instrument)
@@ -742,12 +990,14 @@ def pnl(req):
 
 def positions(req):
     try:
-        if req.session.get("logged_in"):
+        # if req.session.get("logged_in"):
+        if r.get('logged_in')=='1':
             csrf_token = get_token(req) 
             bfo_instruments = get_instruments_cached("BFO")
             bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
             bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
             masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            maybe_start_account_jobs(masterclass_dict)
             # response=master_connection()
             # masterclass_dict=response[0]
             # clients=response[1]
@@ -777,9 +1027,166 @@ def positions(req):
                             break
                         except:
                             iterator+=1
-                    df=pd.DataFrame(positions)
-                    ## print(f"{key} positions: {positions}")
-                    data = pd.DataFrame(
+                    df_position=pd.DataFrame(positions)
+                    if not df_position.empty:
+                        df_tradebook=generate_closed_pnl(key.lower())
+                        df_position['ExchangeInstrumentId'] = df_position['ExchangeInstrumentId'].astype(int)
+                        df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
+                        df = pd.merge(
+                            df_position,
+                            df_tradebook,
+                            left_on=['ExchangeInstrumentId'],
+                            right_on=['instrument'],
+                            how='left'
+                        )
+                        df.fillna(0, inplace=True)
+                        ## print(f"{key} positions: {positions}")
+                        data = pd.DataFrame(
+                            columns=[
+                                "Instrument",
+                                "Expiry",
+                                "Strike",
+                                "Type",
+                                "Quantity",
+                                "LTP",
+                                "Token",
+                                "Exchange",
+                                "PNL",
+                                "ClosedPNL",
+                                "Quantitys",
+                                "Price",
+                                "Side",
+                                "SquareOff"
+                            ]
+                        )
+                        pos_data=df.to_dict(orient='records')
+                        for pos1 in pos_data:
+                            if int(pos1["Quantity"]) == 0:
+                                continue
+                            pos = {}
+                            # ## print(pos1)
+                            
+                            pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
+                            try:
+                                pos["Expiry"] = datetime.strptime(
+                                    pos1["TradingSymbol"].split(" ")[1], "%d%b%Y"
+                                ).strftime("%d-%m-%Y")
+                            except Exception as e:
+                                ## print(e)
+                                pos["Expiry"] = 0
+                            try:
+                                pos["Strike"] = pos1["TradingSymbol"].split(" ")[3]
+                                pos["Type"] = pos1["TradingSymbol"].split(" ")[2]
+                            except Exception as e:
+                                pos['Strike'] = 0
+                                pos["Type"] = 'F'
+                            
+                            pos["Quantity"] = pos1["Quantity"]
+                            pos["LTP"] = 0
+                            pos["Token"]=pos1["ExchangeInstrumentId"]
+                            pos["Exchange"]=pos1["ExchangeSegment"]
+                            exchange=pos1["ExchangeSegment"]
+                            token=pos1['ExchangeInstrumentId']
+                            if re.search(r'B.*F.*O', exchange):
+                                ltp = get_ltp_or_subscribe(7,token)
+                                # ws_connection.send(json.dumps({
+                                #     "a": "subscribe",
+                                #     "v": [[7, int(token)]],
+                                #     "m": "marketdata"
+                                # }))
+                                # ltp_key = f"7_{token}"
+                            else:
+                                ltp = get_ltp_or_subscribe(2,token)
+                                # ws_connection.send(json.dumps({
+                                #     "a": "subscribe",
+                                #     "v": [[2, int(token)]],
+                                #     "m": "marketdata"
+                                # }))
+                                # ltp_key = f"2_{token}"
+                            # iterator=0
+                            # while iterator<2:
+                            #     if ltp_key in ltp_cache:
+                            #         iterator=0
+                            #         break
+                            #     time.sleep(1)
+                            #     ltp_cache=return_ltp_cache() 
+                            #     iterator+=1
+                            # try:
+                            #     ltp=ltp_cache[ltp_key]
+                            # except:
+                            #     ltp=0
+                            if float(pos1['OpenSellQuantity']) != 0:
+                                quantity = pos1['OpenSellQuantity']
+                                price = pos1['SellAveragePrice']
+                                side = 'SELL'
+                            else:
+                                quantity = pos1['OpenBuyQuantity']
+                                price = pos1['BuyAveragePrice']
+                                side = 'BUY'
+                            pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
+                            pos['ClosedPNL']=float(pos1['total_pnl'])
+                            pos['Quantitys']=quantity
+                            pos['Price']=price
+                            pos['Side']=side
+                            squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}"
+                            grouped[str(pos["Strike"])].append(squareoff_id)
+                            url = reverse('squareoff', kwargs={'id': squareoff_id})
+                            # url = f"{{% url 'squareoff' id='{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}' %}}"
+                            # pos["SquareOff"] = (
+                            #     '<form method="POST">'
+                            #     + '<button type="submit">'
+                            #     + f'<a href="{url}": target="_blank">'
+                            #     + "Squareoff"
+                            #     + "</a>"
+                            #     + "</button>"
+                            #     + "</form>"
+                            # )
+                            pos["SquareOff"] = (
+                                f'<form action="{url}" method="POST" style="display:inline;">'
+                                f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                                '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
+                                '</form>'
+                            )
+                            # url_strike=reverse('squareoff_strike')
+                            # body_json = json.dumps(grouped[pos['Strike']])  # serialize list as JSON
+                            # pos["SquareOff Strike"] = (
+                            #     f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                            #     f'<input type="hidden" name="strike" value="{strike}"/>'
+                            #     f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                            #     '<button type="submit">Squareoff Strikes</button>'
+                            #     '</form>'
+                            # )
+                            data.loc[len(data)] = list(pos.values())
+                            data = data.sort_values(
+                                by=["Instrument", "Expiry", "Type", "Strike"],
+                                ascending=[True, True, False, True],
+                            )
+                    ## print('jainam Data: ',data)
+                        xts_positions[key] = data
+                    continue
+                iterator=0
+                while iterator<2:
+                    try:
+                        df_position = masterclass_dict[key].get_positions()
+                        trades=masterclass_dict[key].get_trades()
+                        ## print(df)
+                        iterator=0
+                        break
+                    except:
+                        iterator+=1
+                if not df_position.empty:
+                    df_tradebook=generate_closed_pnl(key.lower())
+                    df_position['instrument_token'] = df_position['instrument_token'].astype(int)
+                    df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
+                    df = pd.merge(
+                        df_position,
+                        df_tradebook,
+                        left_on=['instrument_token'],
+                        right_on=['instrument'],
+                        how='left'
+                    )
+                    df.fillna(0, inplace=True)
+                    pos = pd.DataFrame(
                         columns=[
                             "Instrument",
                             "Expiry",
@@ -790,151 +1197,21 @@ def positions(req):
                             "Token",
                             "Exchange",
                             "PNL",
+                            "ClosedPNL",
                             "Quantitys",
                             "Price",
-                            "Side",
-                            "SquareOff"
+                            "Side"
                         ]
                     )
-                    for pos1 in positions:
-                        if int(pos1["Quantity"]) == 0:
-                            continue
-                        pos = {}
-                        # ## print(pos1)
-                        
-                        pos["Instrument"] = pos1["TradingSymbol"].split(" ")[0]
-                        try:
-                            pos["Expiry"] = datetime.strptime(
-                                pos1["TradingSymbol"].split(" ")[1], "%d%b%Y"
-                            ).strftime("%d-%m-%Y")
-                        except Exception as e:
-                            ## print(e)
-                            pos["Expiry"] = 0
-                        try:
-                            pos["Strike"] = pos1["TradingSymbol"].split(" ")[3]
-                            pos["Type"] = pos1["TradingSymbol"].split(" ")[2]
-                        except Exception as e:
-                            pos['Strike'] = 0
-                            pos["Type"] = 'F'
-                        
-                        pos["Quantity"] = pos1["Quantity"]
-                        pos["LTP"] = 0
-                        pos["Token"]=pos1["ExchangeInstrumentId"]
-                        pos["Exchange"]=pos1["ExchangeSegment"]
-                        exchange=pos1["ExchangeSegment"]
-                        token=pos1['ExchangeInstrumentId']
-                        if re.search(r'B.*F.*O', exchange):
-                            ltp = get_ltp_or_subscribe(7,token)
-                            # ws_connection.send(json.dumps({
-                            #     "a": "subscribe",
-                            #     "v": [[7, int(token)]],
-                            #     "m": "marketdata"
-                            # }))
-                            # ltp_key = f"7_{token}"
-                        else:
-                            ltp = get_ltp_or_subscribe(2,token)
-                            # ws_connection.send(json.dumps({
-                            #     "a": "subscribe",
-                            #     "v": [[2, int(token)]],
-                            #     "m": "marketdata"
-                            # }))
-                            # ltp_key = f"2_{token}"
-                        # iterator=0
-                        # while iterator<2:
-                        #     if ltp_key in ltp_cache:
-                        #         iterator=0
-                        #         break
-                        #     time.sleep(1)
-                        #     ltp_cache=return_ltp_cache() 
-                        #     iterator+=1
-                        # try:
-                        #     ltp=ltp_cache[ltp_key]
-                        # except:
-                        #     ltp=0
-                        if float(pos1['OpenSellQuantity']) != 0:
-                            quantity = pos1['OpenSellQuantity']
-                            price = pos1['SellAveragePrice']
-                            side = 'SELL'
-                        else:
-                            quantity = pos1['OpenBuyQuantity']
-                            price = pos1['BuyAveragePrice']
-                            side = 'BUY'
-                        pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
-                        pos['Quantitys']=quantity
-                        pos['Price']=price
-                        pos['Side']=side
-                        squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}"
-                        grouped[str(pos["Strike"])].append(squareoff_id)
-                        url = reverse('squareoff', kwargs={'id': squareoff_id})
-                        # url = f"{{% url 'squareoff' id='{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}' %}}"
-                        # pos["SquareOff"] = (
-                        #     '<form method="POST">'
-                        #     + '<button type="submit">'
-                        #     + f'<a href="{url}": target="_blank">'
-                        #     + "Squareoff"
-                        #     + "</a>"
-                        #     + "</button>"
-                        #     + "</form>"
-                        # )
-                        pos["SquareOff"] = (
-                            f'<form action="{url}" method="POST" style="display:inline;">'
-                            f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                            '<button type="submit" class="squareoff-btn">Squareoff</button>'
-                            '</form>'
-                        )
-                        # url_strike=reverse('squareoff_strike')
-                        # body_json = json.dumps(grouped[pos['Strike']])  # serialize list as JSON
-                        # pos["SquareOff Strike"] = (
-                        #     f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                        #     f'<input type="hidden" name="strike" value="{strike}"/>'
-                        #     f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                        #     '<button type="submit">Squareoff Strikes</button>'
-                        #     '</form>'
-                        # )
-                        data.loc[len(data)] = list(pos.values())
-                        data = data.sort_values(
-                            by=["Instrument", "Expiry", "Type", "Strike"],
-                            ascending=[True, True, False, True],
-                        )
-                    ## print('jainam Data: ',data)
-                    xts_positions[key] = data
-                    continue
-                iterator=0
-                while iterator<2:
-                    try:
-                        df = masterclass_dict[key].get_positions()
-                        trades=masterclass_dict[key].get_trades()
-                        ## print(df)
-                        iterator=0
-                        break
-                    except:
-                        iterator+=1
-
-                pos = pd.DataFrame(
-                    columns=[
-                        "Instrument",
-                        "Expiry",
-                        "Strike",
-                        "Type",
-                        "Quantity",
-                        "LTP",
-                        "Token",
-                        "Exchange",
-                        "PNL",
-                        "Quantitys",
-                        "Price",
-                        "Side"
-                    ]
-                )
-                client_list.append(key)
-                if not df.empty:
+                    client_list.append(key)
                     for index, row in df.iterrows():
                         instrument = row["symbol"]
                         # try:
                         if instrument=='SENSEX':
                             nfo=bfo_instruments
                         else:
-                            nfo = masterclass_dict[key].contracts["NFO"]
+                            # nfo = masterclass_dict[key].contracts["NFO"]
+                            nfo=get_contracts()
                         expiry = find_expiry(nfo,row["instrument_token"],instrument)
                         ## print(expiry)
                         # except:
@@ -1000,7 +1277,8 @@ def positions(req):
                                 price = float(row['actual_average_buy_price'])
                                 side = 'BUY'
                         pnl=round((float(ltp) - float(price)) * float(quantity)  if side == 'BUY' else (float(price) - (float(ltp))) * float(quantity),2)
-                        pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, quantity, price, side]
+                        closed_pnl=round(row['total_pnl'],2)
+                        pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, closed_pnl, quantity, price, side]
 
                 # df['Token'] = df['Token'].apply(str)
                 df = pos.copy()
@@ -1033,7 +1311,7 @@ def positions(req):
                     lambda row: (
                         f'<form action="{row["url"]}" method="POST" style="display:inline;">'
                         f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                        '<button type="submit" class="squareoff-btn">Squareoff</button>'
+                        '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
                         '</form>'
                     ),
                     axis=1
@@ -1113,7 +1391,7 @@ def positions(req):
                             f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                             f'<input type="hidden" name="strike" value="{strike}"/>'
                             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit" class="squareoff-btn">Squareoff Strikes</button>'
+                            '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
                             '</form>'
                         )
                     return ""
@@ -1186,7 +1464,7 @@ def positions(req):
                             f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                             f'<input type="hidden" name="strike" value="{strike}"/>'
                             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit" class="squareoff-btn">Squareoff Strikes</button>'
+                            '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
                             '</form>'
                         )
                     return ""
@@ -1246,8 +1524,9 @@ def positions(req):
 
 def home(req):
     try:
-        if req.session.get("logged_in"):
+        if r.get("logged_in")=='1':
             masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            maybe_start_account_jobs(masterclass_dict)
             # response=master_connection()
             # masterclass_dict=response[0]
             # clients=response[1]
@@ -1460,6 +1739,7 @@ def home(req):
                             identifier = "aabbcc"
                             user_id = jainam_user_ids[i[0]]
                             for final_order_qty in order_qty:
+                                pass
                                 # print('Jainam',final_order_qty)
                                 Thread(
                                     target=masterclass_dict[i[0]].place_order, 
@@ -1487,11 +1767,11 @@ def home(req):
             sensex_experies = sorted(list(bfo_instruments["expiry"].unique()))
             sensex_experies=sensex_experies[:4]
             sensex_experies_str = [d.strftime("%Y-%m-%d") for d in sensex_experies]
-
             for key in masterclass_dict:
                 if 'jainam' in key.lower():
                     continue
-                nfo = masterclass_dict[key].contracts["NFO"]
+                nfo=get_contracts()
+                # nfo = masterclass_dict[key].contracts["NFO"]
                 nifty_data = nfo[nfo["symbol"].str.startswith("NIFTY")]
                 banknifty_data = nfo[nfo["symbol"].str.contains("BANKNIFTY")]
                 nifty_expiries = sorted(list(nifty_data["expiry"].unique()))
@@ -1508,6 +1788,10 @@ def home(req):
                 experies["SENSEX"]= sensex_experies_str
                 break
 
+            # for key in masterclass_dict:
+            #     start_background_job(key, masterclass_dict[key])
+
+
             return render(req,'trade.html',{
                 "expiries_dict": json.dumps(experies),  # must be JSON string
             'clients':clients})
@@ -1519,19 +1803,22 @@ def home(req):
         return redirect('/home')
 
 def login(req):
-    r.flushall()
+    try:
+        r.delete('accounts_global')
+    except:
+        pass
 
-    session_file_path = settings.SESSION_FILE_PATH
+    # session_file_path = settings.SESSION_FILE_PATH
 
-    # Make sure the session file path exists
-    if os.path.exists(session_file_path):
-        # List all files in the session directory
-        for filename in os.listdir(session_file_path):
-            file_path = os.path.join(session_file_path, filename)
+    # # Make sure the session file path exists
+    # if os.path.exists(session_file_path):
+    #     # List all files in the session directory
+    #     for filename in os.listdir(session_file_path):
+    #         file_path = os.path.join(session_file_path, filename)
             
-            # Check if it's a session file (e.g., starts with 'django_session_')
-            if os.path.isfile(file_path):
-                os.remove(file_path)  # Remove the session file
+    #         # Check if it's a session file (e.g., starts with 'django_session_')
+    #         if os.path.isfile(file_path):
+    #             os.remove(file_path)  # Remove the session file
 
     # # Clear the session data in Django
     # req.session.clear()  # This removes the session data from the Django session store
@@ -1539,23 +1826,23 @@ def login(req):
     # # Reset the 'logged_in' status
     # req.session['logged_in'] = False
 
-    if platform.system() == "Windows":
-        # Restart Redis on Windows
-        pass
-    else:
-        # Restart Redis on Linux (Ubuntu)
-        try:
-            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-            print("Redis restarted on Ubuntu")
-        except Exception as e:
-            print(f"Error restarting Redis on Ubuntu: {e}")
+    # if platform.system() == "Windows":
+    #     # Restart Redis on Windows
+    #     pass
+    # else:
+    #     # Restart Redis on Linux (Ubuntu)
+    #     try:
+    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+    #         print("Redis restarted on Ubuntu")
+    #     except Exception as e:
+    #         print(f"Error restarting Redis on Ubuntu: {e}")
 
     if req.method=='POST':
         username=req.POST['username'].lower()
         password=req.POST['password']
         if username=='ganesha' and password=='ayusshmittaal':
-            req.session["logged_in"] = True
-            req.session.set_expiry(25200)  # expires in 5 minutes (300 seconds)
+            r.set(name="logged_in",value='1',ex=25200)
+            # return HttpResponse("Logged In")
             return redirect('/home')
         else:
             messages.info(req,'Invalid Credentials')
@@ -1563,19 +1850,23 @@ def login(req):
     return render(req,'login.html')
 
 def logout(req):
-    r.flushall()
+    try:
+        r.delete('accounts_global')
+    except:
+        pass
+    # r.flushdb()
 
-    session_file_path = settings.SESSION_FILE_PATH
+    # session_file_path = settings.SESSION_FILE_PATH
 
-    # Make sure the session file path exists
-    if os.path.exists(session_file_path):
-        # List all files in the session directory
-        for filename in os.listdir(session_file_path):
-            file_path = os.path.join(session_file_path, filename)
+    # # Make sure the session file path exists
+    # if os.path.exists(session_file_path):
+    #     # List all files in the session directory
+    #     for filename in os.listdir(session_file_path):
+    #         file_path = os.path.join(session_file_path, filename)
             
-            # Check if it's a session file (e.g., starts with 'django_session_')
-            if filename.startswith("django_session_") and os.path.isfile(file_path):
-                os.remove(file_path)  # Remove the session file
+    #         # Check if it's a session file (e.g., starts with 'django_session_')
+    #         if filename.startswith("django_session_") and os.path.isfile(file_path):
+    #             os.remove(file_path)  # Remove the session file
 
     # Clear the session data in Django
     # req.session.clear()  # This removes the session data from the Django session store
@@ -1583,33 +1874,33 @@ def logout(req):
     # # Reset the 'logged_in' status
     # req.session['logged_in'] = False
 
-    if platform.system() == "Windows":
-        # Restart Redis on Windows
-        pass
-    else:
-        # Restart Redis on Linux (Ubuntu)
-        try:
-            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-            print("Redis restarted on Ubuntu")
-        except Exception as e:
-            print(f"Error restarting Redis on Ubuntu: {e}")
-
+    # if platform.system() == "Windows":
+    #     # Restart Redis on Windows
+    #     pass
+    # else:
+    #     # Restart Redis on Linux (Ubuntu)
+    #     try:
+    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+    #         print("Redis restarted on Ubuntu")
+    #     except Exception as e:
+    #         print(f"Error restarting Redis on Ubuntu: {e}")
+    r.delete('logged_in')
     return redirect('/login')
 
 def index(req):
-    r.flushall()
+    # r.flushdb()
 
-    session_file_path = settings.SESSION_FILE_PATH
+    # session_file_path = settings.SESSION_FILE_PATH
 
-    # Make sure the session file path exists
-    if os.path.exists(session_file_path):
-        # List all files in the session directory
-        for filename in os.listdir(session_file_path):
-            file_path = os.path.join(session_file_path, filename)
+    # # Make sure the session file path exists
+    # if os.path.exists(session_file_path):
+    #     # List all files in the session directory
+    #     for filename in os.listdir(session_file_path):
+    #         file_path = os.path.join(session_file_path, filename)
             
-            # Check if it's a session file (e.g., starts with 'django_session_')
-            if filename.startswith("django_session_") and os.path.isfile(file_path):
-                os.remove(file_path)  # Remove the session file
+    #         # Check if it's a session file (e.g., starts with 'django_session_')
+    #         if filename.startswith("django_session_") and os.path.isfile(file_path):
+    #             os.remove(file_path)  # Remove the session file
 
     # Clear the session data in Django
     # req.session.clear()  # This removes the session data from the Django session store
@@ -1617,14 +1908,14 @@ def index(req):
     # # Reset the 'logged_in' status
     # req.session['logged_in'] = False
 
-    if platform.system() == "Windows":
-        pass
-    else:
-        # Restart Redis on Linux (Ubuntu)
-        try:
-            os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-            print("Redis restarted on Ubuntu")
-        except Exception as e:
-            print(f"Error restarting Redis on Ubuntu: {e}")
+    # if platform.system() == "Windows":
+    #     pass
+    # else:
+    #     # Restart Redis on Linux (Ubuntu)
+    #     try:
+    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
+    #         print("Redis restarted on Ubuntu")
+    #     except Exception as e:
+    #         print(f"Error restarting Redis on Ubuntu: {e}")
 
     return redirect('/login')
