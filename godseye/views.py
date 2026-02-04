@@ -1353,13 +1353,16 @@ def positions(req):
                 df['__row_attr__'] = (
                     'data-token="' + df['Token'].astype(str) + '" '
                     'data-exchange="' + df['Exchange'].astype(str) + '" '
-                    'data-account="' + key + '" '
+                    'data-account="' + key + '" '+
+                    'data-instrument="' + df['Instrument'].astype(str) + '" ' +
                     'data-price="' + df['Price'].astype(str) + '" '
                     'data-quantity="' + df['Quantitys'].astype(str) + '" '
                     'data-side="' + df['Side'].astype(str) + '"'
                 )
                 df = df.drop(columns=['Price','Quantitys','Side'])
                 # Mark LTP column cell for live update
+                df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
+                df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
                 df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                 df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
 
@@ -1401,26 +1404,29 @@ def positions(req):
                 df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
 
                 final_rows = []
-                numeric_cols = ['PNL', 'ClosedPNL']
-                for col in ['PNL', 'ClosedPNL']:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+
                 for instrument, inst_df in df.groupby('Instrument', sort=False):
-                    # 1) add original rows
                     final_rows.append(inst_df)
 
-                    # 2) compute sums
                     summary = inst_df[numeric_cols].sum()
 
-                    # 3) create summary row (match df columns)
                     summary_row = {col: '' for col in df.columns}
                     summary_row['Instrument'] = f'{instrument} TOTAL'
-                    summary_row['PNL'] = round(summary['PNL'], 2)
-                    summary_row['ClosedPNL'] = round(summary['ClosedPNL'], 2)
+                    initial_pnl = round(summary['_PNL_NUM'], 2)
+                    summary_row['PNL'] = (
+                        f'<span class="pnl-total" data-value="{initial_pnl}">'
+                        f'{initial_pnl}'
+                        f'</span>'
+                    )
+                    summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
                     summary_row['SquareOff Strike'] = ''
-                    summary_row['__row_attr__'] = 'class="instrument-total"'
+                    summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
                     final_rows.append(pd.DataFrame([summary_row]))
+
                 df = pd.concat(final_rows, ignore_index=True)
+                df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
                 row_attrs = df['__row_attr__'].tolist()  # save separately
                 df = df.drop(columns=['__row_attr__'])
@@ -1441,8 +1447,8 @@ def positions(req):
 
                 html = '\n'.join(final_html)                
                 html = re.sub(
-                    r'<tr class="instrument-total">\s*<td>(.*?) TOTAL</td>(<td></td>){5}',
-                    r'<tr class="instrument-total"><td colspan="6">\1 TOTAL</td>',
+                    r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
+                    r'<tr class="instrument-total"><td colspan="6">\1</td>',
                     html,
                     flags=re.S
                 )
@@ -1476,6 +1482,7 @@ def positions(req):
                     'data-token="' + df['Token'].astype(str) + '" ' +
                     'data-exchange="' + df['Exchange'].astype(str) + '" ' +
                     'data-account="' + key + '" ' +
+                    'data-instrument="' + df['Instrument'].astype(str) + '" ' +
                     'data-price="' + df['Price'].astype(str) + '" ' +
                     'data-quantity="' + df['Quantitys'].astype(str) + '" ' +
                     'data-side="' + df['Side'].astype(str) + '"'
@@ -1483,6 +1490,8 @@ def positions(req):
                 
                 df = df.drop(columns=['Price','Quantitys','Side'])
                 # 2) Mark LTP column cell with class="ltp-value"
+                df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
+                df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
                 df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                 df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
                 def make_squareoff_form(row):
@@ -1517,26 +1526,29 @@ def positions(req):
                 df=df.drop(columns='Type_order')
 
                 final_rows = []
-                numeric_cols = ['PNL', 'ClosedPNL']
-                for col in ['PNL', 'ClosedPNL']:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+
                 for instrument, inst_df in df.groupby('Instrument', sort=False):
-                    # 1) add original rows
                     final_rows.append(inst_df)
 
-                    # 2) compute sums
                     summary = inst_df[numeric_cols].sum()
 
-                    # 3) create summary row (match df columns)
                     summary_row = {col: '' for col in df.columns}
                     summary_row['Instrument'] = f'{instrument} TOTAL'
-                    summary_row['PNL'] = round(summary['PNL'], 2)
-                    summary_row['ClosedPNL'] = round(summary['ClosedPNL'], 2)
+                    initial_pnl = round(summary['_PNL_NUM'], 2)
+                    summary_row['PNL'] = (
+                        f'<span class="pnl-total" data-value="{initial_pnl}">'
+                        f'{initial_pnl}'
+                        f'</span>'
+                    )
+                    summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
                     summary_row['SquareOff Strike'] = ''
-                    summary_row['__row_attr__'] = 'class="instrument-total"'
+                    summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
                     final_rows.append(pd.DataFrame([summary_row]))
+
                 df = pd.concat(final_rows, ignore_index=True)
+                df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
                 row_attrs = df['__row_attr__'].tolist()
                 df = df.drop(columns=['__row_attr__'])
@@ -1562,8 +1574,8 @@ def positions(req):
 
                 html = '\n'.join(final_html)
                 html = re.sub(
-                    r'<tr class="instrument-total">\s*<td>(.*?) TOTAL</td>(<td></td>){5}',
-                    r'<tr class="instrument-total"><td colspan="6">\1 TOTAL</td>',
+                    r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
+                    r'<tr class="instrument-total"><td colspan="6">\1</td>',
                     html,
                     flags=re.S
                 )

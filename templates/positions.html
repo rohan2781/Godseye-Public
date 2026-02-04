@@ -211,6 +211,36 @@ document.querySelectorAll("td").forEach(td => {
     }
 });
 
+function updateInstrumentTotals() {
+
+  // For EACH total row
+  document.querySelectorAll("tr.instrument-total").forEach(totalRow => {
+
+    const table = totalRow.closest("table");   // 🔥 CRITICAL LINE
+    if (!table) return;
+
+    const instrument = totalRow.dataset.instrument;
+    let sum = 0;
+
+    // ONLY rows inside THIS table
+    table.querySelectorAll(
+      `tr[data-instrument="${instrument}"]:not(.instrument-total)`
+    ).forEach(row => {
+
+      const pnlSpan = row.querySelector(".pnl-value");
+      if (!pnlSpan) return;
+
+      sum += parseFloat(pnlSpan.textContent) || 0;
+    });
+
+    const totalSpan = totalRow.querySelector(".pnl-total");
+    if (totalSpan) {
+      totalSpan.textContent = sum.toFixed(2);
+    }
+  });
+}
+
+
 async function updateLTPs() {
       const rows = document.querySelectorAll("tr[data-token]");
       const payload = [];
@@ -264,6 +294,8 @@ async function updateLTPs() {
           }
         }
       });
+    updateInstrumentTotals();
+
     }
 
     // Update every 10 seconds
