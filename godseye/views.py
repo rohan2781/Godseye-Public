@@ -1398,9 +1398,33 @@ def positions(req):
                 df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
                 sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
                 df['Type_order'] = df['Type'].map(sort_order)
-                df = df.sort_values(by=['Type_order', 'Strike']).drop(columns='Type_order')
+                df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
+
+                final_rows = []
+                numeric_cols = ['PNL', 'ClosedPNL']
+                for col in ['PNL', 'ClosedPNL']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                for instrument, inst_df in df.groupby('Instrument', sort=False):
+                    # 1) add original rows
+                    final_rows.append(inst_df)
+
+                    # 2) compute sums
+                    summary = inst_df[numeric_cols].sum()
+
+                    # 3) create summary row (match df columns)
+                    summary_row = {col: '' for col in df.columns}
+                    summary_row['Instrument'] = f'{instrument} TOTAL'
+                    summary_row['PNL'] = round(summary['PNL'], 2)
+                    summary_row['ClosedPNL'] = round(summary['ClosedPNL'], 2)
+                    summary_row['SquareOff Strike'] = ''
+                    summary_row['__row_attr__'] = 'class="instrument-total"'
+
+                    final_rows.append(pd.DataFrame([summary_row]))
+                df = pd.concat(final_rows, ignore_index=True)
+
                 row_attrs = df['__row_attr__'].tolist()  # save separately
                 df = df.drop(columns=['__row_attr__'])
+
                 # 5) Now generate HTML
                 html = df.to_html(classes="data", escape=False, index=False)
 
@@ -1415,7 +1439,13 @@ def positions(req):
                     else:
                         final_html.append(line)
 
-                html = '\n'.join(final_html)
+                html = '\n'.join(final_html)                
+                html = re.sub(
+                    r'<tr class="instrument-total">\s*<td>(.*?) TOTAL</td>(<td></td>){5}',
+                    r'<tr class="instrument-total"><td colspan="6">\1 TOTAL</td>',
+                    html,
+                    flags=re.S
+                )
 
 
             # 7) Add to output
@@ -1481,10 +1511,33 @@ def positions(req):
 
                 # 4) Save row attributes in a variable THEN drop column so it doesn't show
 
-                sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
+                sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
                 df['Type_order'] = df['Type'].map(sort_order)
-                df = df.sort_values(by=['Type_order', 'Strike'])
+                df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike'])
                 df=df.drop(columns='Type_order')
+
+                final_rows = []
+                numeric_cols = ['PNL', 'ClosedPNL']
+                for col in ['PNL', 'ClosedPNL']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+                for instrument, inst_df in df.groupby('Instrument', sort=False):
+                    # 1) add original rows
+                    final_rows.append(inst_df)
+
+                    # 2) compute sums
+                    summary = inst_df[numeric_cols].sum()
+
+                    # 3) create summary row (match df columns)
+                    summary_row = {col: '' for col in df.columns}
+                    summary_row['Instrument'] = f'{instrument} TOTAL'
+                    summary_row['PNL'] = round(summary['PNL'], 2)
+                    summary_row['ClosedPNL'] = round(summary['ClosedPNL'], 2)
+                    summary_row['SquareOff Strike'] = ''
+                    summary_row['__row_attr__'] = 'class="instrument-total"'
+
+                    final_rows.append(pd.DataFrame([summary_row]))
+                df = pd.concat(final_rows, ignore_index=True)
+
                 row_attrs = df['__row_attr__'].tolist()
                 df = df.drop(columns=['__row_attr__'])
 
@@ -1508,6 +1561,12 @@ def positions(req):
                         final_html.append(line)
 
                 html = '\n'.join(final_html)
+                html = re.sub(
+                    r'<tr class="instrument-total">\s*<td>(.*?) TOTAL</td>(<td></td>){5}',
+                    r'<tr class="instrument-total"><td colspan="6">\1 TOTAL</td>',
+                    html,
+                    flags=re.S
+                )
 
                 arr.append(html)
                 client_list.append(key)
