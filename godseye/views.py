@@ -1399,7 +1399,7 @@ def positions(req):
                         )
                     return ""
                 df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
-                sort_order = {'CE': 0, 'PE': 1}  # custom sort order for Type
+                sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
                 df['Type_order'] = df['Type'].map(sort_order)
                 df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
 
