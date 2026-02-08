@@ -64,21 +64,27 @@ def maybe_start_account_jobs(masterclass_dict):
 def get_contracts():
     current_folder = os.path.dirname(os.path.abspath(__file__))
     print(current_folder)
-    # List all files starting with 'contracts'
+    flag=1
     contract_files = [f for f in os.listdir(current_folder)
-                    if os.path.isfile(os.path.join(current_folder, f)) and f.startswith("contracts")]
-    if (contract_files[0].split('_')[2].split('.')[0]==datetime.today().strftime("%d%m%Y")):
-        print('heya')
-        # file_path = os.path.join(current_folder, 'contracts_NSE_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
-        # nse=pd.read_csv(file_path)
-        file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
-        print(file_path)
-        nfo=pd.read_csv(file_path)
-        return nfo
-        # r.set('nse', pickle.dumps(nse))
-        # r.set('nfo', pickle.dumps(nfo))
+                        if os.path.isfile(os.path.join(current_folder, f)) and f.startswith("contracts")]
+    # List all files starting with 'contracts'
+    try:
+        if (contract_files[0].split('_')[2].split('.')[0]==datetime.today().strftime("%d%m%Y")):
+            print('heya')
+            # file_path = os.path.join(current_folder, 'contracts_NSE_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+            # nse=pd.read_csv(file_path)
+            file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
+            print(file_path)
+            nfo=pd.read_csv(file_path)
+            return nfo
+            # r.set('nse', pickle.dumps(nse))
+            # r.set('nfo', pickle.dumps(nfo))
+        else:
+            flag=0
 
-    else:
+    except:
+        flag=0
+    if flag==0:
         for f in contract_files:
             file_to_delete = os.path.join(current_folder, f)
             try:
@@ -429,9 +435,13 @@ def squareoff_strike(req):
                 token, account_holder = token_and_name.split('_', 1)
                 for key in masterclass_dict:
                     if "jainam" not in key.lower():
-                        all_contracts=masterclass_dict[key].allcontracts
+                        # all_contracts=masterclass_dict[key].allcontracts
+                        all_contracts=get_contracts()
                         break
-                instrument = all_contracts[all_contracts['exchange_token'].astype(str) == str(token)].iloc[0]['company_name']
+                instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+                instrument = instrument.split()[0].upper()
+                if re.search(r'B.*F.*O',exchange):
+                    instrument='SENSEX'
                 iterator=0
                 while True:
                     if re.search(r'B.*F.*O',exchange):
@@ -633,9 +643,12 @@ def squareoff(req,id):
             token, account_holder = token_and_name.split('_', 1)
             for key in masterclass_dict:
                 if "jainam" not in key.lower():
-                    all_contracts=masterclass_dict[key].allcontracts
+                    all_contracts=get_contracts()
                     break
-            instrument = all_contracts[all_contracts['exchange_token'].astype(str) == str(token)].iloc[0]['company_name']
+            instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+            instrument = instrument.split()[0].upper()
+            if re.search(r'B.*F.*O',exchange):
+                instrument='SENSEX'
             iterator=0
             while True:
                 if re.search(r'B.*F.*O',exchange):
@@ -1168,7 +1181,7 @@ def positions(req):
                 while iterator<2:
                     try:
                         df_position = masterclass_dict[key].get_positions()
-                        trades=masterclass_dict[key].get_trades()
+                        # trades=masterclass_dict[key].get_trades()
                         ## print(df)
                         iterator=0
                         break
@@ -1253,29 +1266,46 @@ def positions(req):
                         #     ltp=ltp_cache[ltp_key]
                         # except:
                         #     ltp=0
-                        try:
-                            filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
+                        # try:
+                        #     filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
                             
-                            # Sum the trade_price column of the filtered trades
-                            # total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
-                            average_trade_price = filtered_trades['trade_price'].mean()
-                            if row['net_quantity']>0:
-                                quantity = abs(int(row['net_quantity']))
-                                price = average_trade_price
-                                side = 'BUY'
-                            else:
-                                quantity = abs(int(row['net_quantity']))
-                                price = average_trade_price
-                                side = 'SELL'
-                        except:
-                            if float(row['cf_sell_quantity']) != 0:
-                                quantity = row['cf_sell_quantity']
-                                price = float(row['actual_average_sell_price'])
-                                side = 'SELL'
-                            else:
-                                quantity = row['cf_buy_quantity']
-                                price = float(row['actual_average_buy_price'])
-                                side = 'BUY'
+                        #     # Sum the trade_price column of the filtered trades
+                        #     # total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
+                        #     average_trade_price = filtered_trades['trade_price'].mean()
+                        #     if row['net_quantity']>0:
+                        #         quantity = abs(int(row['net_quantity']))
+                        #         price = average_trade_price
+                        #         side = 'BUY'
+                        #     else:
+                        #         quantity = abs(int(row['net_quantity']))
+                        #         price = average_trade_price
+                        #         side = 'SELL'
+                        # except:
+                        #     if float(row['cf_sell_quantity']) != 0:
+                        #         quantity = row['cf_sell_quantity']
+                        #         price = float(row['actual_average_sell_price'])
+                        #         side = 'SELL'
+                        #     else:
+                        #         quantity = row['cf_buy_quantity']
+                        #         price = float(row['actual_average_buy_price'])
+                        #         side = 'BUY'
+                        if float(row['cf_sell_quantity'])>0:
+                            quantity = float(row['cf_sell_quantity'])
+                            price = float(row['actual_average_sell_price'])
+                            side = 'SELL'
+                        elif float(row['sell_quantity'])>0:
+                            quantity = float(row['sell_quantity'])
+                            price = float(row['average_sell_price'])
+                            side = 'SELL'
+                        elif float(row['cf_buy_quantity'])>0:
+                            quantity = float(row['cf_buy_quantity'])
+                            price = float(row['actual_average_buy_price'])
+                            side = 'BUY'
+                        else:
+                            quantity = float(row['buy_quantity'])
+                            price = float(row['average_buy_price'])
+                            side = 'BUY'
+
                         pnl=round((float(ltp) - float(price)) * float(quantity)  if side == 'BUY' else (float(price) - (float(ltp))) * float(quantity),2)
                         closed_pnl=round(row['total_pnl'],2)
                         pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, closed_pnl, quantity, price, side]
@@ -1643,7 +1673,6 @@ def home(req):
                         legs.append(leg_num)
 
                 legs = sorted(set(legs), key=int)
-
                 orders = []
                 for leg in legs:
                     instrument   = req.POST.get(f"instrument_{leg}")
@@ -1716,7 +1745,8 @@ def home(req):
 
                     if ltp > 1300:
                         messages.info(req,"Error Price TOO HIGH")
-                        return redirect('/home')
+                        continue
+                        # return redirect('/home')
                     
                     orders.append({
                         "instrument":instrument,
@@ -1810,7 +1840,7 @@ def home(req):
                             identifier = "aabbcc"
                             user_id = jainam_user_ids[i[0]]
                             for final_order_qty in order_qty:
-                                pass
+                                # print('jainam',order,final_order_qty)
                                 # print('Jainam',final_order_qty)
                                 Thread(
                                     target=masterclass_dict[i[0]].place_order, 
