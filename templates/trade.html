@@ -348,6 +348,13 @@
   </div>
 
   <script>
+
+    const LOT_SIZES = {
+      NIFTY: 65,
+      BANKNIFTY: 30,
+      SENSEX: 20
+    };
+
     // Auto-hide snackbars
     document.addEventListener('DOMContentLoaded', () => {
       const snackbars = document.querySelectorAll('.snackbar');
@@ -395,6 +402,43 @@
       });
     }
 
+    function enforceLotMultiple(input, lotSize) {
+      if (!input.dataset.lotBound) {
+        input.addEventListener("blur", () => {
+          let val = parseInt(input.value, 10);
+
+          console.log('initial', val);
+
+          if (isNaN(val) || val <= 0) {
+            input.value = input.dataset.lotSize;
+            return;
+          }
+
+          const lot = parseInt(input.dataset.lotSize, 10);
+
+          if (val % lot === 0) {
+            console.log('valid multiple', val);
+            input.value = val;
+            return;
+          }
+
+          if (val < lot) {
+            input.value = lot;
+            return;
+          }
+
+          input.value = Math.floor(val / lot) * lot;
+          console.log('final', input.value);
+        });
+
+        input.dataset.lotBound = "true";
+      }
+
+      // 🔁 Always update current lot size
+      input.dataset.lotSize = lotSize;
+    }
+
+
     function createRadioGroup(name, options, colorType) {
       return `
         <div class="radio-group" data-name="${name}" data-type="${colorType}">
@@ -431,6 +475,15 @@
         const legRow = el.closest(".leg-row");
         const legId = legRow.id.split("-")[1];
         updateExpiryDropdown(legId, el.dataset.value);
+
+        const lotSize = LOT_SIZES[el.dataset.value] || 1;
+        const qtyInput = legRow.querySelector(`input[name="qty_${legId}"]`);
+        if (qtyInput) {
+          qtyInput.min = lotSize;
+          qtyInput.step = lotSize;
+          qtyInput.value = lotSize;   // default 1 lot
+        }
+        enforceLotMultiple(qtyInput, lotSize);
       }
     }
 
@@ -482,6 +535,7 @@
           const first = group.querySelector(".radio-option");
           selectRadio(first, group.dataset.name, group.dataset.type);
         });
+        const qtyInput = leg.querySelector(`input[name="qty_${legCount}"]`);
       }, 0);
     };
 

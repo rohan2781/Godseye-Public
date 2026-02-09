@@ -438,10 +438,12 @@ def squareoff_strike(req):
                         # all_contracts=masterclass_dict[key].allcontracts
                         all_contracts=get_contracts()
                         break
-                instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
-                instrument = instrument.split()[0].upper()
+                instrument=None
                 if re.search(r'B.*F.*O',exchange):
                     instrument='SENSEX'
+                else:
+                    instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+                    instrument = instrument.split()[0].upper()
                 iterator=0
                 while True:
                     if re.search(r'B.*F.*O',exchange):
@@ -645,10 +647,12 @@ def squareoff(req,id):
                 if "jainam" not in key.lower():
                     all_contracts=get_contracts()
                     break
-            instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
-            instrument = instrument.split()[0].upper()
+            instrument=None
             if re.search(r'B.*F.*O',exchange):
                 instrument='SENSEX'
+            else:
+                instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+                instrument = instrument.split()[0].upper()
             iterator=0
             while True:
                 if re.search(r'B.*F.*O',exchange):
