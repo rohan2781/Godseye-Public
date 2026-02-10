@@ -250,16 +250,17 @@ def fetch_and_insert_orders(account_key, client):
         return
 
     # # 2️⃣ Fetch existing orderIds ONCE
-    # existing_ids = set(
-    #     TradeBook.objects.values_list("orderId", flat=True)
-    # )
+    existing_ids = set(
+        TradeBook.objects.values_list("orderId", flat=True)
+    )
 
     # 3️⃣ Prepare rows
     new_rows = []
     print(account_key)
     for _, order in orders.iterrows():
         normalized = normalize_order(order, account_key.lower())
-        new_rows.append(TradeBook(**normalized))
+        if normalized["orderId"] not in existing_ids:
+            new_rows.append(TradeBook(**normalized))
 
     # 4️⃣ Bulk insert
     if new_rows:
