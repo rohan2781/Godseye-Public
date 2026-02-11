@@ -1007,7 +1007,7 @@ def pnl(req):
         return redirect('/home')
 
 def positions(req):
-    try:
+    # try:
         # if req.session.get("logged_in"):
         if r.get('logged_in')=='1':
             csrf_token = get_token(req) 
@@ -1027,7 +1027,7 @@ def positions(req):
             titles = []
             xts_positions = {}
             threads = []
-            master_dfs=[]
+            master_dfs={}
             grouped = defaultdict(list)
             for key in masterclass_dict:  
                 # print(key)  
@@ -1221,7 +1221,7 @@ def positions(req):
                             "Side"
                         ]
                     )
-                    client_list.append(key)
+                    # client_list.append(key)
                     for index, row in df.iterrows():
                         instrument = row["symbol"]
                         # try:
@@ -1315,111 +1315,114 @@ def positions(req):
                         closed_pnl=round(row['total_pnl'],2)
                         pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, closed_pnl, quantity, price, side]
 
-                # df['Token'] = df['Token'].apply(str)
-                df = pos.copy()
-                df = df.sort_values(
-                    by=["Instrument", "Expiry", "Type", "Strike"],
-                    ascending=[True, True, False, True],
-                )
-                df = df[df["Quantity"] != 0]
-                ## print("***************")
-                ## print(df)
-                ## print("****************")
-                df["url"] = df.apply(
-                    lambda row: reverse("squareoff",kwargs={"id": f"{row['Token']}_{key}_{row['Quantity']}_{row['Exchange']}"},),
-                    axis=1
-                )
-                df["rollover_url"] = "https://goddseye.ngrok.io/rollover" + df["Token"]
-                # df["Squareoff"] = df.apply(
-                #     lambda row: (
-                #         '<form method="POST">'
-                #         + '<button type="submit">'
-                #         + f'<a href="{row["url"]}" target="_blank">'
-                #         + "Squareoff"
-                #         + "</a>"
-                #         + "</button>"
-                #         + "</form>"
-                #     ),
-                #     axis=1
-                # )
-                df["Squareoff"] = df.apply(
-                    lambda row: (
-                        f'<form action="{row["url"]}" method="POST" style="display:inline;">'
-                        f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                        '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
-                        '</form>'
-                    ),
-                    axis=1
-                )
-                new_grouped = (
-                    df.groupby("Strike")
-                    .apply(lambda g: [
-                        f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
-                        for row in g.itertuples(index=False)
-                    ])
-                    .to_dict()
-                )
+                    # df['Token'] = df['Token'].apply(str)
+                    df = pos.copy()
+                    df = df.sort_values(
+                        by=["Instrument", "Expiry", "Type", "Strike"],
+                        ascending=[True, True, False, True],
+                    )
+                    df = df[df["Quantity"] != 0]
+                    ## print("***************")
+                    ## print(df)
+                    ## print("****************")
+                    df["url"] = df.apply(
+                        lambda row: reverse("squareoff",kwargs={"id": f"{row['Token']}_{key}_{row['Quantity']}_{row['Exchange']}"},),
+                        axis=1
+                    )
+                    df["rollover_url"] = "https://goddseye.ngrok.io/rollover" + df["Token"]
+                    # df["Squareoff"] = df.apply(
+                    #     lambda row: (
+                    #         '<form method="POST">'
+                    #         + '<button type="submit">'
+                    #         + f'<a href="{row["url"]}" target="_blank">'
+                    #         + "Squareoff"
+                    #         + "</a>"
+                    #         + "</button>"
+                    #         + "</form>"
+                    #     ),
+                    #     axis=1
+                    # )
+                    df["Squareoff"] = df.apply(
+                        lambda row: (
+                            f'<form action="{row["url"]}" method="POST" style="display:inline;">'
+                            f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                            '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
+                            '</form>'
+                        ),
+                        axis=1
+                    )
+                    new_grouped = (
+                        df.groupby("Strike")
+                        .apply(lambda g: [
+                            f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
+                            for row in g.itertuples(index=False)
+                        ])
+                        .to_dict()
+                    )
 
-                for strike, items in new_grouped.items():
-                    grouped[strike].extend(items)
+                    for strike, items in new_grouped.items():
+                        grouped[strike].extend(items)
 
-                # def make_squareoff_form(row):
-                #     strike = row.strike
-                #     if strike in grouped:
-                #         body_json = json.dumps(grouped[strike])
-                #         return (
-                #             f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                #             f'<input type="hidden" name="strike" value="{strike}"/>'
-                #             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                #             '<button type="submit">Squareoff Strikes</button>'
-                #             '</form>'
-                #         )
-                #     return ""
-                # df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+                    # def make_squareoff_form(row):
+                    #     strike = row.strike
+                    #     if strike in grouped:
+                    #         body_json = json.dumps(grouped[strike])
+                    #         return (
+                    #             f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                    #             f'<input type="hidden" name="strike" value="{strike}"/>'
+                    #             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                    #             '<button type="submit">Squareoff Strikes</button>'
+                    #             '</form>'
+                    #         )
+                    #     return ""
+                    # df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
 
-                df = df.drop(["url","rollover_url"], axis=1)
+                    df = df.drop(["url","rollover_url"], axis=1)
 
-                # df['__row_attr__'] = (
-                #     'data-token="' + df['Token'].astype(str) + '" '
-                #     'data-exchange="' + df['Exchange'].astype(str) + '" '
-                #     f'data-account="{key}"'
-                # )
+                    # df['__row_attr__'] = (
+                    #     'data-token="' + df['Token'].astype(str) + '" '
+                    #     'data-exchange="' + df['Exchange'].astype(str) + '" '
+                    #     f'data-account="{key}"'
+                    # )
 
-                df['__row_attr__'] = (
-                    'data-token="' + df['Token'].astype(str) + '" '
-                    'data-exchange="' + df['Exchange'].astype(str) + '" '
-                    'data-account="' + key + '" '+
-                    'data-instrument="' + df['Instrument'].astype(str) + '" ' +
-                    'data-price="' + df['Price'].astype(str) + '" '
-                    'data-quantity="' + df['Quantitys'].astype(str) + '" '
-                    'data-side="' + df['Side'].astype(str) + '"'
-                )
-                df = df.drop(columns=['Price','Quantitys','Side'])
-                # Mark LTP column cell for live update
-                df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
-                df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
-                df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
-                df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
+                    df['__row_attr__'] = (
+                        'data-token="' + df['Token'].astype(str) + '" '
+                        'data-exchange="' + df['Exchange'].astype(str) + '" '
+                        'data-account="' + key + '" '+
+                        'data-instrument="' + df['Instrument'].astype(str) + '" ' +
+                        'data-price="' + df['Price'].astype(str) + '" '
+                        'data-quantity="' + df['Quantitys'].astype(str) + '" '
+                        'data-side="' + df['Side'].astype(str) + '"'
+                    )
+                    df = df.drop(columns=['Price','Quantitys','Side'])
+                    # Mark LTP column cell for live update
+                    df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
+                    df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
+                    df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
+                    df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
 
 
-                for index, row in df.iterrows():
-                    exchange = row['Exchange']  # or whatever column holds the key
-                    token = row['Token']
-                    t = Thread(target=subscribe_row, args=(exchange, token))
-                    t.start()
-                    threads.append(t)
+                    for index, row in df.iterrows():
+                        exchange = row['Exchange']  # or whatever column holds the key
+                        token = row['Token']
+                        t = Thread(target=subscribe_row, args=(exchange, token))
+                        t.start()
+                        threads.append(t)
 
-                # Hide Token and Exchange from display
-                df = df.drop(columns=['Token', 'Exchange'])
+                    # Hide Token and Exchange from display
+                    df = df.drop(columns=['Token', 'Exchange'])
 
-                # 4) IMPORTANT: Drop __row_attr__ from display BEFORE to_html
-                # row_attrs = df['__row_attr__'].tolist()  # save separately
-                # df = df.drop(columns=['__row_attr__'])
+                    # 4) IMPORTANT: Drop __row_attr__ from display BEFORE to_html
+                    # row_attrs = df['__row_attr__'].tolist()  # save separately
+                    # df = df.drop(columns=['__row_attr__'])
 
-                master_dfs.append(df)
+                    # master_dfs.append(df)
+                    master_dfs[key]=df
             ## print('Group ',grouped)
+            print('MasterTrust',master_dfs.keys())
             url_strike=reverse('squareoff_strike')
-            for df in master_dfs:
+            for key in master_dfs:
+                df = master_dfs[key].copy()
                 def make_squareoff_form(row):
                     strike = row.Strike
                     if strike in grouped:
@@ -1488,22 +1491,12 @@ def positions(req):
                     flags=re.S
                 )
 
-
-            # 7) Add to output
-            arr.append(html)
-            titles.append(df.columns.values)
-                
-
-
-            # remove specific item from list
-
+                arr.append(html)
+                client_list.append(key)
             
-            # for key in xts_positions:
-            #     arr.append(xts_positions[key].to_html(classes="data", escape=False))
-            #     titles.append(xts_positions[key].columns.values)
-            #     client_list.append(key)
-            # rows = zip(client_list, arr)
 
+
+            print(xts_positions.keys())
             for key in xts_positions:
                 df = xts_positions[key].copy()
 
@@ -1618,15 +1611,18 @@ def positions(req):
                 arr.append(html)
                 client_list.append(key)
 
+            
+            print('Listing')
+            print(client_list)
             rows = zip(client_list, arr)
 
             return render(req,"positions.html",{'header':"true",'rows':rows})
         else:
             messages.info(req,'Please Login')
             return redirect('/login')
-    except:
-        messages.info(req,'Error Occured')
-        return redirect('/home')
+    # except:
+    #     messages.info(req,'Error Occured')
+    #     return redirect('/home')
 
 def home(req):
     try:
