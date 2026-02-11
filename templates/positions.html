@@ -12,6 +12,42 @@
 }
 
 /* ================= BASIC PAGE ================= */
+.instrument-total {
+    font-weight: 700;
+    font-size: 1.08rem;
+    background: linear-gradient(to right, #f8f9fa, #eef2f7);
+    border-top: 2px solid #444;
+    border-bottom: 2px solid #444;
+}
+
+.instrument-total td {
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.pnl-total {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 1rem;
+    display: inline-block;
+    min-width: 100px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+/* Positive */
+.pnl-positive {
+    background-color: #5df385;
+    color: #0f5132;
+}
+
+/* Negative */
+.pnl-negative {
+    background-color: #fa6170;
+    color: #842029;
+}
+
 body {
     font-family: Arial, sans-serif;
     background: white;
@@ -186,6 +222,8 @@ table th {
 
 <!-- ============ SCRIPTS ============ -->
 <script>
+
+
 /* Snackbar auto-hide */
 document.addEventListener('DOMContentLoaded', () => {
     const snackbars = document.querySelectorAll('.snackbar');
@@ -194,6 +232,14 @@ document.addEventListener('DOMContentLoaded', () => {
             snackbar.classList.add('show');
             setTimeout(() => snackbar.classList.remove('show'), 3000);
         }, i * 400);
+    });
+    document.querySelectorAll(".pnl-total").forEach(function(el) {
+        let value = parseFloat(el.dataset.value);
+        if (value > 0) {
+            el.classList.add("pnl-positive");
+        } else if (value < 0) {
+            el.classList.add("pnl-negative");
+        }
     });
 });
 

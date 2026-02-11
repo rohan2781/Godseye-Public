@@ -1047,6 +1047,13 @@ def positions(req):
                             iterator+=1
                     df_position=pd.DataFrame(positions)
                     if not df_position.empty:
+                        df_position = df_position[
+                            df_position['TradingSymbol'].str.contains(
+                                r'\b(SENSEX|NIFTY|BANKNIFTY)\b',
+                                case=False,
+                                na=False
+                            )
+                        ]
                         df_tradebook=generate_closed_pnl(key.lower())
                         df_position['ExchangeInstrumentId'] = df_position['ExchangeInstrumentId'].astype(int)
                         df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
@@ -1193,6 +1200,7 @@ def positions(req):
                     except:
                         iterator+=1
                 if not df_position.empty:
+                    df_position = df_position[df_position['trading_symbol'].str.startswith(('SENSEX', 'NIFTY', 'BANKNIFTY'))]
                     df_tradebook=generate_closed_pnl(key.lower())
                     df_position['instrument_token'] = df_position['instrument_token'].astype(int)
                     df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
