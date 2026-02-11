@@ -341,11 +341,12 @@ async function updateLTPs() {
         }
       });
     updateInstrumentTotals();
+    setTimeout(updateLTPs, 1000); // wait 1s after previous request finishes
 
     }
 
     // Update every 10 seconds
-    setInterval(updateLTPs, 1000);
+    updateLTPs();
     //document.getElementById("updateLtpBtn").addEventListener("click", updateLTPs);
     
 </script>
