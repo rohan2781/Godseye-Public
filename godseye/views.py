@@ -1007,7 +1007,7 @@ def pnl(req):
         return redirect('/home')
 
 def positions(req):
-    # try:
+    try:
         # if req.session.get("logged_in"):
         if r.get('logged_in')=='1':
             csrf_token = get_token(req) 
@@ -1471,7 +1471,10 @@ def positions(req):
 
                     final_rows.append(pd.DataFrame([summary_row]))
 
-                df = pd.concat(final_rows, ignore_index=True)
+                if final_rows:
+                    df = pd.concat(final_rows, ignore_index=True)
+                else:
+                    df = pd.DataFrame(columns=df.columns)
                 df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
                 row_attrs = df['__row_attr__'].tolist()  # save separately
@@ -1583,7 +1586,10 @@ def positions(req):
 
                     final_rows.append(pd.DataFrame([summary_row]))
 
-                df = pd.concat(final_rows, ignore_index=True)
+                if final_rows:
+                    df = pd.concat(final_rows, ignore_index=True)
+                else:
+                    df = pd.DataFrame(columns=df.columns)
                 df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
                 row_attrs = df['__row_attr__'].tolist()
@@ -1628,9 +1634,9 @@ def positions(req):
         else:
             messages.info(req,'Please Login')
             return redirect('/login')
-    # except:
-    #     messages.info(req,'Error Occured')
-    #     return redirect('/home')
+    except:
+        messages.info(req,'Error Occured')
+        return redirect('/home')
 
 def home(req):
     try:
