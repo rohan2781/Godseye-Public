@@ -36,7 +36,7 @@ ALLOWED_HOSTS = [
 
 # CSRF trusted origins (important for POST forms)
 CSRF_TRUSTED_ORIGINS = [
-    'https://godseye-aeyq.onrender.com',
+    'https://ganeshatrades.net',
 ]
 
 # Application definition
