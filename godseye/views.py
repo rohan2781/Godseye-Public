@@ -1302,20 +1302,20 @@ def positions(req):
                         #         quantity = row['cf_buy_quantity']
                         #         price = float(row['actual_average_buy_price'])
                         #         side = 'BUY'
-                        if float(row['cf_sell_quantity'])>0:
-                            quantity = float(row['cf_sell_quantity'])
+                        if float(row['cf_sell_quantity'])>0 and float(row['net_quantity'])<0:
+                            quantity = float(abs(row['net_quantity']))
                             price = float(row['actual_average_sell_price'])
                             side = 'SELL'
-                        elif float(row['sell_quantity'])>0:
-                            quantity = float(row['sell_quantity'])
+                        elif float(row['sell_quantity'])>0 and float(row['net_quantity'])<0:
+                            quantity = float(abs(row['net_quantity']))
                             price = float(row['average_sell_price'])
                             side = 'SELL'
-                        elif float(row['cf_buy_quantity'])>0:
-                            quantity = float(row['cf_buy_quantity'])
+                        elif float(row['cf_buy_quantity'])>0 and float(row['net_quantity'])>0:
+                            quantity = float(abs(row['net_quantity']))
                             price = float(row['actual_average_buy_price'])
                             side = 'BUY'
                         else:
-                            quantity = float(row['buy_quantity'])
+                            quantity = float(abs(row['net_quantity']))
                             price = float(row['average_buy_price'])
                             side = 'BUY'
 
