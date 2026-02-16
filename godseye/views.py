@@ -1142,11 +1142,11 @@ def positions(req):
                             #     ltp=0
                             if float(pos1['OpenSellQuantity']) != 0:
                                 quantity = pos1['OpenSellQuantity']
-                                price = pos1['SellAveragePrice']
+                                price = pos1['ActualSellAveragePrice']
                                 side = 'SELL'
                             else:
                                 quantity = pos1['OpenBuyQuantity']
-                                price = pos1['BuyAveragePrice']
+                                price = pos1['ActualBuyAveragePrice']
                                 side = 'BUY'
                             pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
                             pos['ClosedPNL']=float(pos1['total_pnl'])
