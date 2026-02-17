@@ -1963,12 +1963,12 @@ def login(req):
 
             else:
                 messages.info(req,'Invalid Credentials')
+        return render(req,'login.html')
     except Exception as e:
-        print(e)
+        return HttpResponse(e)
 
     
     
-    return render(req,'login.html')
 
 @login_required
 def logout(req):
