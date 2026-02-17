@@ -1947,25 +1947,22 @@ def home(req):
         return redirect('/home')
 
 def login(req):
-    try:
-        if req.method=='POST':
-            username=req.POST['username'].lower()
-            password=req.POST['password']
-            user=Users.objects.filter(username=username,password=password)
-            if user.exists():
-                user=user.first()
-                token=f"user_{user.userid}"
-                r.set(name=str(user.userid),value='1',ex=25200)
-                # return HttpResponse("Logged In")
-                response= redirect('/home')
-                response.set_cookie('x-auth-token', token, httponly=True, secure=True, samesite='Strict')
-                return response
+    if req.method=='POST':
+        username=req.POST['username'].lower()
+        password=req.POST['password']
+        user=Users.objects.filter(username=username,password=password)
+        if user.exists():
+            user=user.first()
+            token=f"user_{user.userid}"
+            r.set(name=str(user.userid),value='1',ex=25200)
+            # return HttpResponse("Logged In")
+            response= redirect('/home')
+            response.set_cookie('x-auth-token', token, httponly=True, secure=True, samesite='Strict')
+            return response
 
-            else:
-                messages.info(req,'Invalid Credentials')
-        return render(req,'login.html')
-    except Exception as e:
-        return HttpResponse(e)
+        else:
+            messages.info(req,'Invalid Credentials')
+    return render(req,'login.html')
 
     
     
