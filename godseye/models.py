@@ -17,18 +17,22 @@ class TradeBook(models.Model):
         managed = False  # IMPORTANT since table already exists
         app_label = 'godseye'
 
+class Users(models.Model):
+    userid=models.AutoField(primary_key=True)
+    username=models.TextField()
+    password=models.TextField()
 
-    def __str__(self):
-        return f"Trade {self.tradeNo} | {self.instrument} | {self.side}"
-
-from django.db import models
+    class Meta:
+        db_table = 'Users'
+        managed = False  # important: existing table
+        app_label = 'godseye'
 
 class Accounts(models.Model):
     accountId = models.AutoField(primary_key=True)
     name = models.TextField()
     userId = models.TextField()
     password = models.TextField()
-    year = models.TextField()
+    totp = models.TextField()
     appId = models.TextField()
     appName = models.TextField()
     appSecret = models.TextField()
@@ -38,12 +42,12 @@ class Accounts(models.Model):
     twofa = models.TextField(null=True, blank=True)
     authToken = models.TextField(null=True, blank=True)
     ROC = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
+    master_class_instance_data = models.BinaryField(null=True, blank=True)  # This will hold serialized data of the class instance
+    users=models.TextField()
 
     class Meta:
         db_table = 'Accounts'
         managed = False  # important: existing table
         app_label = 'godseye'
-
-    def __str__(self):
-        return f"{self.accountId} - {self.name}"
+    
 

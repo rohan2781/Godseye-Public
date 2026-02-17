@@ -2,9 +2,11 @@ from django.db import close_old_connections
 from django.shortcuts import render,redirect
 from django.http import HttpResponse, JsonResponse
 from django.contrib import messages
+from .connectors import master_connection
 # from godseye.connectors import master_connection,return_ltp_cache
-from .master_manager import master_manager
+# from .master_manager import master_manager
 from datetime import datetime,date
+from functools import wraps
 import pandas as pd
 import json
 from kiteconnect import KiteConnect
@@ -32,7 +34,34 @@ r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 instrument_cache={}
 positions_data=[]
 
-import time
+def login_required(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        # Retrieve the token from cookies
+        token = request.COOKIES.get('x-auth-token')
+        if token:
+            # Decrypt and verify the token (you can customize this based on your logic)
+            parts = token.split('_')
+            if parts[0] == 'user':
+                user_id = int(parts[1])
+
+            try:
+                cached=r.get(str(user_id))
+            except:
+                return redirect('/login')
+            if user_id and cached=='1':
+                # The token is valid, continue with the request
+                user_data=Users.objects.filter(userid=user_id).first()
+                request.user = user_data.username
+                return view_func(request, *args, **kwargs)
+            else:
+                # Invalid token, redirect to login
+                return redirect('/login')
+        else:
+            # No token found, redirect to login
+            return redirect('/login')
+
+    return _wrapped_view
 
 def maybe_start_account_jobs(masterclass_dict):
     now = time.time()
@@ -321,7 +350,7 @@ def get_instruments_cached(exchange):
     return df
 
 def fetch_ltp(positions):
-    # response = master_connection()
+    # response = master_connection(req.user)
     # ws_connection = response[3]
     # ltp_cache = response[4]
     result = {}
@@ -382,228 +411,226 @@ def get_ltp(req):
         result = fetch_ltp(positions)
         return JsonResponse(result)
     return HttpResponse('Get LTP')
-        
+
+@login_required        
 def squareoff_strike(req):
     try:
-        # if req.session.get("logged_in"):
-        if r.get('logged_in')=='1':
-            strike = req.POST.get("strike")
-            body_data = json.loads(req.POST.get("data"))
-            ## print("Body Data ",body_data)
-            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
-            maybe_start_account_jobs(masterclass_dict)
-            # response=master_connection()
-            # masterclass_dict=response[0]
-            # clients=response[1]
-            # jainam_user_ids=response[2]
-            # ws_connection=response[3]
-            # ltp_cache=response[4]
-            nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
-            banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
-            try:
-                if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
-                    nifty_freeze_qty=1800
-                if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
-                    banknifty_freeze_qty=600
-            except:
+    # if req.session.get("logged_in"):
+        strike = req.POST.get("strike")
+        body_data = json.loads(req.POST.get("data"))
+        ## print("Body Data ",body_data)
+        masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+        maybe_start_account_jobs(masterclass_dict)
+        # response=master_connection(req.user)
+        # masterclass_dict=response[0]
+        # clients=response[1]
+        # jainam_user_ids=response[2]
+        # ws_connection=response[3]
+        # ltp_cache=response[4]
+        nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
+        banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
+        try:
+            if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 nifty_freeze_qty=1800
+            if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
                 banknifty_freeze_qty=600
-            sensex_freeze_qty=1000
-            kite_instruments = get_instruments_cached("NFO")
-            bfo_instruments = get_instruments_cached("BFO")
-            kite_instruments = kite_instruments[kite_instruments["segment"] == "NFO-OPT"]
-            nifty_lot_size=kite_instruments[kite_instruments['name'] == 'NIFTY']['lot_size'].iloc[0]
-            banknifty_lot_size=kite_instruments[kite_instruments['name'] == 'BANKNIFTY']['lot_size'].iloc[0]
-            kite_instruments["expiry"] = pd.to_datetime(kite_instruments["expiry"]).dt.date
-            bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
-            bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-            sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
-            # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
-            
-            bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
-            bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
-            # data=id.split('_')
-            # token=data[0]
-            # account_holder=data[1]
-            # quantity=data[2]
-            # exchange=data[3]
-            for id in body_data:
-                data = id.rsplit('_', 2)
-                token_and_name = data[0]
-                quantity = data[1]
-                exchange = data[2]
-                # now split token from name (first underscore only)
-                token, account_holder = token_and_name.split('_', 1)
-                for key in masterclass_dict:
-                    if "jainam" not in key.lower():
-                        # all_contracts=masterclass_dict[key].allcontracts
-                        all_contracts=get_contracts()
-                        break
-                instrument=None
+        except:
+            nifty_freeze_qty=1800
+            banknifty_freeze_qty=600
+        sensex_freeze_qty=1000
+        kite_instruments = get_instruments_cached("NFO")
+        bfo_instruments = get_instruments_cached("BFO")
+        kite_instruments = kite_instruments[kite_instruments["segment"] == "NFO-OPT"]
+        nifty_lot_size=kite_instruments[kite_instruments['name'] == 'NIFTY']['lot_size'].iloc[0]
+        banknifty_lot_size=kite_instruments[kite_instruments['name'] == 'BANKNIFTY']['lot_size'].iloc[0]
+        kite_instruments["expiry"] = pd.to_datetime(kite_instruments["expiry"]).dt.date
+        bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
+        bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
+        sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
+        # bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        
+        bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+        bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
+        # data=id.split('_')
+        # token=data[0]
+        # account_holder=data[1]
+        # quantity=data[2]
+        # exchange=data[3]
+        for id in body_data:
+            data = id.rsplit('_', 2)
+            token_and_name = data[0]
+            quantity = data[1]
+            exchange = data[2]
+            # now split token from name (first underscore only)
+            token, account_holder = token_and_name.split('_', 1)
+            for key in masterclass_dict:
+                if "jainam" not in key.lower():
+                    # all_contracts=masterclass_dict[key].allcontracts
+                    all_contracts=get_contracts()
+                    break
+            instrument=None
+            if re.search(r'B.*F.*O',exchange):
+                instrument='SENSEX'
+            else:
+                instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+                instrument = instrument.split()[0].upper()
+            iterator=0
+            while True:
                 if re.search(r'B.*F.*O',exchange):
-                    instrument='SENSEX'
+                    # ltp_key = f"7_{token}"
+                    # if ltp_key in ltp_cache:
+                    #     ltp=ltp_cache[ltp_key]
+                    # else:
+                    #     ws_connection.send(json.dumps({
+                    #         "a": "subscribe",
+                    #         "v": [[7, int(token)]],
+                    #         "m": "marketdata"
+                    #     }))
+                    #     try:
+                    #         ltp=ltp_cache[ltp_key]
+                    #     except:
+                    #         ltp=0
+                    ltp = get_ltp_or_subscribe(7,int(token))
                 else:
-                    instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
-                    instrument = instrument.split()[0].upper()
-                iterator=0
-                while True:
-                    if re.search(r'B.*F.*O',exchange):
-                        # ltp_key = f"7_{token}"
-                        # if ltp_key in ltp_cache:
-                        #     ltp=ltp_cache[ltp_key]
-                        # else:
-                        #     ws_connection.send(json.dumps({
-                        #         "a": "subscribe",
-                        #         "v": [[7, int(token)]],
-                        #         "m": "marketdata"
-                        #     }))
-                        #     try:
-                        #         ltp=ltp_cache[ltp_key]
-                        #     except:
-                        #         ltp=0
-                        ltp = get_ltp_or_subscribe(7,int(token))
-                    else:
-                        # ltp_key = f"2_{token}"
-                        # if ltp_key in ltp_cache:
-                        #     ltp = ltp_cache[ltp_key]
-                        # else:
-                        #     ws_connection.send(json.dumps({
-                        #         "a": "subscribe",
-                        #         "v": [[2, int(token)]],
-                        #         "m": "marketdata"
-                        #     }))
-                        #     try:
-                        #         ltp=ltp_cache[ltp_key]
-                        #     except:
-                        #         ltp=0
-                        ltp = get_ltp_or_subscribe(2,int(token))
-                    if ltp!=0 or iterator>=5:
-                        break
-                    time.sleep(1)
-                    # ltp_cache=return_ltp_cache()
-                    iterator+=1
-                if ltp==0:
-                    ## print('Rohan',ltp_cache)
-                    messages.info(req,'Square Off Failed')
-                    return redirect('/positions')
-                order_qty=[]
-                order_side="BUY" if int(quantity) < 0 else "SELL"
-                if order_side=='BUY' and instrument=='NIFTY':
-                    ltp+=7
-                elif order_side=='SELL' and instrument=='NIFTY':
-                    ltp-=7
-                elif order_side=='BUY':
-                    ltp+=7
-                else:
-                    ltp-=7
-                quantity=abs(int(quantity))
-                match instrument:
-                    case 'BANKNIFTY':
-                        while int(quantity)>0:
-                            if quantity>banknifty_freeze_qty:
-                                lots=math.floor(banknifty_freeze_qty/banknifty_lot_size)
-                                order_qty.append(lots*banknifty_lot_size)
-                                quantity-=(lots*banknifty_lot_size)
-                            else:
-                                lots=math.ceil(quantity/banknifty_lot_size)
-                                order_qty.append(lots*banknifty_lot_size)
-                                quantity-=(lots*banknifty_lot_size)
-                    case 'NIFTY':
-                        while int(quantity)>0:
-                            if quantity>nifty_freeze_qty:
-                                lots=math.floor(nifty_freeze_qty/nifty_lot_size)
-                                order_qty.append(lots*nifty_lot_size)
-                                quantity-=(lots*nifty_lot_size)
-                            else:
-                                lots=math.ceil(quantity/nifty_lot_size)
-                                order_qty.append(lots*nifty_lot_size)
-                                quantity-=(lots*nifty_lot_size)
-                    case 'SENSEX':
-                        while int(quantity)>0:
-                            if quantity>sensex_freeze_qty:
-                                lots=math.floor(sensex_freeze_qty/sensex_lot_size)
-                                order_qty.append(lots*sensex_lot_size)
-                                quantity-=(lots*sensex_lot_size)
-                            else:
-                                lots=math.ceil(quantity/sensex_lot_size)
-                                order_qty.append(lots*sensex_lot_size)
-                                quantity-=(lots*sensex_lot_size)
-                for key in masterclass_dict:
-                    ## print(key,instrument,order_qty)
-                    if "jainam" in key.lower() and key==account_holder:
-                        exchange_segment = exchange
-                        exchange_token = token
-                        product_type = "NRML"
-                        order_type = "LIMIT"
-                        order_side = order_side
-                        time_in_force = "DAY"
-                        disclosed_qty = 0
-                        limit_price = ltp
-                        stop_price = 0
-                        identifier = "aabbcc"
-                        user_id = jainam_user_ids[key]
-                        for final_order_qty in order_qty:
-                            # print('Squaring of jainaim ',final_order_qty)
-                            ## print('jainam',final_order_qty)
-                            Thread(
-                                target=masterclass_dict[key].place_order, 
-                                kwargs={
-                                    "exchangeSegment": exchange_segment,
-                                    "exchangeInstrumentID": exchange_token,
-                                    "productType": product_type,
-                                    "orderType": order_type,
-                                    "orderSide": order_side,
-                                    "timeInForce": time_in_force,
-                                    "disclosedQuantity": disclosed_qty,
-                                    "orderQuantity": int(final_order_qty),
-                                    "limitPrice": limit_price,
-                                    "stopPrice": stop_price,
-                                    "orderUniqueIdentifier": identifier,
-                                    "clientID": user_id,
-                                }
-                            ).start()
-                    elif key==account_holder:
-                        order={
-                            "instrument":token,
-                            "client_id": masterclass_dict[key].username,
-                            "disclosed_quantity": 0,
-                            "exchange": exchange,
-                            "instrument_token": token,
-                            "market_protection_percentage": 100,
-                            "order_side": order_side,
-                            "order_type": "LIMIT",
-                            "product": "NRML",
-                            "quantity": int(quantity),
-                            "trigger_price": 0,
-                            "validity": "DAY",
-                            "user_order_id": "1",
-                            "price": ltp
-                        }
-                        ## print('Master Trust Order ',order)
-                        for final_order_qty in order_qty:
-                            order['quantity']=final_order_qty    
-                            # b = masterclass_dict[i[0]].place_order(order1)
-                            # print('Squaring off Master Trust ',final_order_qty)
-                            Thread(
-                                target=masterclass_dict[key].place_order, args=(order,)
-                            ).start()
-            messages.info(req,'Positions Squared-off')
-            return redirect("/positions")
+                    # ltp_key = f"2_{token}"
+                    # if ltp_key in ltp_cache:
+                    #     ltp = ltp_cache[ltp_key]
+                    # else:
+                    #     ws_connection.send(json.dumps({
+                    #         "a": "subscribe",
+                    #         "v": [[2, int(token)]],
+                    #         "m": "marketdata"
+                    #     }))
+                    #     try:
+                    #         ltp=ltp_cache[ltp_key]
+                    #     except:
+                    #         ltp=0
+                    ltp = get_ltp_or_subscribe(2,int(token))
+                if ltp!=0 or iterator>=5:
+                    break
+                time.sleep(1)
+                # ltp_cache=return_ltp_cache()
+                iterator+=1
+            if ltp==0:
+                ## print('Rohan',ltp_cache)
+                messages.info(req,'Square Off Failed')
+                return redirect('/positions')
+            order_qty=[]
+            order_side="BUY" if int(quantity) < 0 else "SELL"
+            if order_side=='BUY' and instrument=='NIFTY':
+                ltp+=7
+            elif order_side=='SELL' and instrument=='NIFTY':
+                ltp-=7
+            elif order_side=='BUY':
+                ltp+=7
+            else:
+                ltp-=7
+            quantity=abs(int(quantity))
+            match instrument:
+                case 'BANKNIFTY':
+                    while int(quantity)>0:
+                        if quantity>banknifty_freeze_qty:
+                            lots=math.floor(banknifty_freeze_qty/banknifty_lot_size)
+                            order_qty.append(lots*banknifty_lot_size)
+                            quantity-=(lots*banknifty_lot_size)
+                        else:
+                            lots=math.ceil(quantity/banknifty_lot_size)
+                            order_qty.append(lots*banknifty_lot_size)
+                            quantity-=(lots*banknifty_lot_size)
+                case 'NIFTY':
+                    while int(quantity)>0:
+                        if quantity>nifty_freeze_qty:
+                            lots=math.floor(nifty_freeze_qty/nifty_lot_size)
+                            order_qty.append(lots*nifty_lot_size)
+                            quantity-=(lots*nifty_lot_size)
+                        else:
+                            lots=math.ceil(quantity/nifty_lot_size)
+                            order_qty.append(lots*nifty_lot_size)
+                            quantity-=(lots*nifty_lot_size)
+                case 'SENSEX':
+                    while int(quantity)>0:
+                        if quantity>sensex_freeze_qty:
+                            lots=math.floor(sensex_freeze_qty/sensex_lot_size)
+                            order_qty.append(lots*sensex_lot_size)
+                            quantity-=(lots*sensex_lot_size)
+                        else:
+                            lots=math.ceil(quantity/sensex_lot_size)
+                            order_qty.append(lots*sensex_lot_size)
+                            quantity-=(lots*sensex_lot_size)
+            for key in masterclass_dict:
+                ## print(key,instrument,order_qty)
+                if "jainam" in key.lower() and key==account_holder:
+                    exchange_segment = exchange
+                    exchange_token = token
+                    product_type = "NRML"
+                    order_type = "LIMIT"
+                    order_side = order_side
+                    time_in_force = "DAY"
+                    disclosed_qty = 0
+                    limit_price = ltp
+                    stop_price = 0
+                    identifier = "aabbcc"
+                    user_id = jainam_user_ids[key]
+                    for final_order_qty in order_qty:
+                        # print('Squaring of jainaim ',final_order_qty)
+                        ## print('jainam',final_order_qty)
+                        Thread(
+                            target=masterclass_dict[key].place_order, 
+                            kwargs={
+                                "exchangeSegment": exchange_segment,
+                                "exchangeInstrumentID": exchange_token,
+                                "productType": product_type,
+                                "orderType": order_type,
+                                "orderSide": order_side,
+                                "timeInForce": time_in_force,
+                                "disclosedQuantity": disclosed_qty,
+                                "orderQuantity": int(final_order_qty),
+                                "limitPrice": limit_price,
+                                "stopPrice": stop_price,
+                                "orderUniqueIdentifier": identifier,
+                                "clientID": user_id,
+                            }
+                        ).start()
+                elif key==account_holder:
+                    order={
+                        "instrument":token,
+                        "client_id": masterclass_dict[key].username,
+                        "disclosed_quantity": 0,
+                        "exchange": exchange,
+                        "instrument_token": token,
+                        "market_protection_percentage": 100,
+                        "order_side": order_side,
+                        "order_type": "LIMIT",
+                        "product": "NRML",
+                        "quantity": int(quantity),
+                        "trigger_price": 0,
+                        "validity": "DAY",
+                        "user_order_id": "1",
+                        "price": ltp
+                    }
+                    ## print('Master Trust Order ',order)
+                    for final_order_qty in order_qty:
+                        order['quantity']=final_order_qty    
+                        # b = masterclass_dict[i[0]].place_order(order1)
+                        # print('Squaring off Master Trust ',final_order_qty)
+                        Thread(
+                            target=masterclass_dict[key].place_order, args=(order,)
+                        ).start()
+        messages.info(req,'Positions Squared-off')
+        return redirect("/positions")
             
-        else:
-            messages.info(req,'Please Login')
-            return redirect('/login')
     except:
         messages.info(req,'Error Occured')
         return redirect('/positions')
 
+@login_required
 def squareoff(req,id):
     try:
         # if req.session.get("logged_in"):
-        if r.get('logged_in')=='1':
-            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+        # if r.get('logged_in')=='1':
+            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             maybe_start_account_jobs(masterclass_dict)
-            # response=master_connection()
+            # response=master_connection(req.user)
             # masterclass_dict=response[0]
             # clients=response[1]
             # jainam_user_ids=response[2]
@@ -797,16 +824,18 @@ def squareoff(req,id):
                         ).start()
             messages.info(req,'Position Squared-off')
             return redirect("/positions")
-        else:
-            messages.info(req,'Please Login')
-            return redirect('/login')
+        # else:
+        #     messages.info(req,'Please Login')
+        #     return redirect('/login')
     except:
         messages.info(req,'Error Occured')
         return redirect('/positions')
 
+@login_required
 def squareoff_calls(req):
     pass
 
+@login_required
 def squareoff_puts(req):
     pass
 
@@ -818,19 +847,20 @@ def find_expiry(nfo,token,instrument):
         nfo = nfo[nfo["code"].astype(str).str.strip() == str(token).strip()]
         return dt.datetime.fromtimestamp(nfo.iloc[0]["expiry"]).strftime("%d-%m-%Y")
 
+@login_required
 def pnl(req): 
     try:
-        global positions_data
+            global positions_data
         # if req.session.get("logged_in"):
-        if r.get('logged_in')=='1':
+        # if r.get('logged_in')=='1':
             if not req.headers.get('x-requested-with') == 'XMLHttpRequest':
                 bfo_instruments = get_instruments_cached("BFO")
                 bfo_instruments = pd.DataFrame(bfo_instruments)
                 bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
                 bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-                masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+                masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
                 maybe_start_account_jobs(masterclass_dict)
-                # response=master_connection()
+                # response=master_connection(req.user)
                 # masterclass_dict=response[0]
                 # jainam_user_ids=response[2]
                 # ws_connection=response[3]
@@ -999,24 +1029,25 @@ def pnl(req):
             return render(req, "pnl.html", {"rows": rows})
             # ## print(grouped_pnl)
             # return HttpResponse('PNL')
-        else:
-            messages.info(req,'Please Login')
-            return redirect('/login')
+        # else:
+        #     messages.info(req,'Please Login')
+        #     return redirect('/login')
     except:
         messages.info(req,'Error Occured')
         return redirect('/home')
 
+@login_required
 def positions(req):
     try:
         # if req.session.get("logged_in"):
-        if r.get('logged_in')=='1':
+        # if r.get('logged_in')=='1':
             csrf_token = get_token(req) 
             bfo_instruments = get_instruments_cached("BFO")
             bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
             bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             maybe_start_account_jobs(masterclass_dict)
-            # response=master_connection()
+            # response=master_connection(req.user)
             # masterclass_dict=response[0]
             # clients=response[1]
             # jainam_user_ids=response[2]
@@ -1140,12 +1171,12 @@ def positions(req):
                             #     ltp=ltp_cache[ltp_key]
                             # except:
                             #     ltp=0
-                            if float(pos1['OpenSellQuantity']) != 0:
-                                quantity = pos1['OpenSellQuantity']
+                            if float(pos1['Quantity'])< 0:
+                                quantity = abs(float(pos1['Quantity']))
                                 price = pos1['ActualSellAveragePrice']
                                 side = 'SELL'
                             else:
-                                quantity = pos1['OpenBuyQuantity']
+                                quantity = abs(float(pos1['Quantity']))
                                 price = pos1['ActualBuyAveragePrice']
                                 side = 'BUY'
                             pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
@@ -1427,7 +1458,7 @@ def positions(req):
                     # master_dfs.append(df)
                     master_dfs[key]=df
             ## print('Group ',grouped)
-            print('MasterTrust',master_dfs.keys())
+            # print('MasterTrust',master_dfs.keys())
             url_strike=reverse('squareoff_strike')
             for key in master_dfs:
                 df = master_dfs[key].copy()
@@ -1507,7 +1538,7 @@ def positions(req):
             
 
 
-            print(xts_positions.keys())
+            # print(xts_positions.keys())
             for key in xts_positions:
                 df = xts_positions[key].copy()
 
@@ -1626,24 +1657,24 @@ def positions(req):
                 client_list.append(key)
 
             
-            print('Listing')
-            print(client_list)
+            # print('Listing')
+            # print(client_list)
             rows = zip(client_list, arr)
 
             return render(req,"positions.html",{'header':"true",'rows':rows})
-        else:
-            messages.info(req,'Please Login')
-            return redirect('/login')
+        # else:
+        #     messages.info(req,'Please Login')
+        #     return redirect('/login')
     except:
         messages.info(req,'Error Occured')
         return redirect('/home')
 
+@login_required
 def home(req):
     try:
-        if r.get("logged_in")=='1':
-            masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             maybe_start_account_jobs(masterclass_dict)
-            # response=master_connection()
+            # response=master_connection(req.user)
             # masterclass_dict=response[0]
             # clients=response[1]
             # jainam_user_ids=response[2]
@@ -1911,127 +1942,43 @@ def home(req):
             return render(req,'trade.html',{
                 "expiries_dict": json.dumps(experies),  # must be JSON string
             'clients':clients})
-        else:
-            messages.info(req,'Please Login')
-            return redirect('/login')
     except:
         messages.info(req,'Error Occured')
         return redirect('/home')
 
 def login(req):
-    try:
-        r.delete('accounts_global')
-    except:
-        pass
-
-    # session_file_path = settings.SESSION_FILE_PATH
-
-    # # Make sure the session file path exists
-    # if os.path.exists(session_file_path):
-    #     # List all files in the session directory
-    #     for filename in os.listdir(session_file_path):
-    #         file_path = os.path.join(session_file_path, filename)
-            
-    #         # Check if it's a session file (e.g., starts with 'django_session_')
-    #         if os.path.isfile(file_path):
-    #             os.remove(file_path)  # Remove the session file
-
-    # # Clear the session data in Django
-    # req.session.clear()  # This removes the session data from the Django session store
-
-    # # Reset the 'logged_in' status
-    # req.session['logged_in'] = False
-
-    # if platform.system() == "Windows":
-    #     # Restart Redis on Windows
-    #     pass
-    # else:
-    #     # Restart Redis on Linux (Ubuntu)
-    #     try:
-    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-    #         print("Redis restarted on Ubuntu")
-    #     except Exception as e:
-    #         print(f"Error restarting Redis on Ubuntu: {e}")
-
+    
     if req.method=='POST':
         username=req.POST['username'].lower()
         password=req.POST['password']
-        if username=='ganesha' and password=='ayusshmittaal':
-            r.set(name="logged_in",value='1',ex=25200)
+        user=Users.objects.filter(username=username,password=password)
+        if user.exists():
+            user=user.first()
+            token=f"user_{user.userid}"
+            r.set(name=str(user.userid),value='1',ex=25200)
             # return HttpResponse("Logged In")
-            return redirect('/home')
+            response= redirect('/home')
+            response.set_cookie('x-auth-token', token, httponly=True, secure=True, samesite='Strict')
+            return response
+
         else:
             messages.info(req,'Invalid Credentials')
     
     return render(req,'login.html')
 
+@login_required
 def logout(req):
-    try:
-        r.delete('accounts_global')
-    except:
-        pass
-    # r.flushdb()
-
-    # session_file_path = settings.SESSION_FILE_PATH
-
-    # # Make sure the session file path exists
-    # if os.path.exists(session_file_path):
-    #     # List all files in the session directory
-    #     for filename in os.listdir(session_file_path):
-    #         file_path = os.path.join(session_file_path, filename)
-            
-    #         # Check if it's a session file (e.g., starts with 'django_session_')
-    #         if filename.startswith("django_session_") and os.path.isfile(file_path):
-    #             os.remove(file_path)  # Remove the session file
-
-    # Clear the session data in Django
-    # req.session.clear()  # This removes the session data from the Django session store
-
-    # # Reset the 'logged_in' status
-    # req.session['logged_in'] = False
-
-    # if platform.system() == "Windows":
-    #     # Restart Redis on Windows
+    # try:
+        # r.delete('accounts_global')
+        print(req.user)
+        user=Users.objects.filter(username=req.user).first()
+        r.delete(str(user.userid))
+        r.delete("refresh_time_"+str(req.user))
+    # except:
     #     pass
-    # else:
-    #     # Restart Redis on Linux (Ubuntu)
-    #     try:
-    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-    #         print("Redis restarted on Ubuntu")
-    #     except Exception as e:
-    #         print(f"Error restarting Redis on Ubuntu: {e}")
-    r.delete('logged_in')
-    return redirect('/login')
+        return redirect('/login')
 
 def index(req):
     # r.flushdb()
-
-    # session_file_path = settings.SESSION_FILE_PATH
-
-    # # Make sure the session file path exists
-    # if os.path.exists(session_file_path):
-    #     # List all files in the session directory
-    #     for filename in os.listdir(session_file_path):
-    #         file_path = os.path.join(session_file_path, filename)
-            
-    #         # Check if it's a session file (e.g., starts with 'django_session_')
-    #         if filename.startswith("django_session_") and os.path.isfile(file_path):
-    #             os.remove(file_path)  # Remove the session file
-
-    # Clear the session data in Django
-    # req.session.clear()  # This removes the session data from the Django session store
-
-    # # Reset the 'logged_in' status
-    # req.session['logged_in'] = False
-
-    # if platform.system() == "Windows":
-    #     pass
-    # else:
-    #     # Restart Redis on Linux (Ubuntu)
-    #     try:
-    #         os.system('sudo systemctl restart redis')  # Restart Redis using systemctl
-    #         print("Redis restarted on Ubuntu")
-    #     except Exception as e:
-    #         print(f"Error restarting Redis on Ubuntu: {e}")
 
     return redirect('/login')

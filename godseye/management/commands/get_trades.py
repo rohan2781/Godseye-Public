@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from godseye.master_manager import master_manager
+from godseye.connectors import master_connection
 from godseye.views import normalize_order
 from godseye.models import TradeBook
 from django.db import close_old_connections
@@ -60,8 +60,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         # Load accounts
-        master_manager._load_accounts_from_file()
-        masterclass_dict, clients, jainam_user_ids = master_manager.master_connection()
+        masterclass_dict, clients, jainam_user_ids = master_connection('ganesha')
 
         self.stdout.write(f"Starting order fetch for {len(masterclass_dict)} accounts.")
 

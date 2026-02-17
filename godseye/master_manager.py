@@ -1,4 +1,4 @@
-from .connectors import MasterConnectionManager
+# from .connectors import MasterConnectionManager
 
-# Per-worker singleton
-master_manager = MasterConnectionManager()
+# # Per-worker singleton
+# master_manager = MasterConnectionManager()
