@@ -32,5 +32,7 @@ urlpatterns = [
     path('squareoff_puts',views.squareoff_puts,name='squareoff_puts'),
     path('get_ltp',views.get_ltp,name='get_ltp'),
     path('logout',views.logout,name='logout'),
+    path('placesl',views.placesl,name='placesl'),
+    path('cancelsl',views.cancelsl,name='cancelsl'),
 
 ]

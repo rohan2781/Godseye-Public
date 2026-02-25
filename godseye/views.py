@@ -34,6 +34,7 @@ r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 instrument_cache={}
 positions_data=[]
 
+
 def login_required(view_func):
     @wraps(view_func)
     def _wrapped_view(request, *args, **kwargs):
@@ -258,46 +259,49 @@ def normalize_order(order, account_key):
         }
 
 def fetch_and_insert_orders(account_key, client):
-    # Safe DB handling for threads
-    close_old_connections()
+    try:
+        # Safe DB handling for threads
+        close_old_connections()
 
-    # 1️⃣ Fetch orders (API call in thread)
-    if 'jainam' not in account_key.lower():
-        try:
-            orders = client.get_orders('completed')
-        except:
-            orders=pd.DataFrame()
-    else:
-        try:
-            orders_dict = client.get_order_book()
-            df_orders = pd.DataFrame(orders_dict["result"])
-            orders = df_orders[df_orders["OrderStatus"] == "Filled"].reset_index(drop=True)
-        except:
-            orders=pd.DataFrame()
+        # 1️⃣ Fetch orders (API call in thread)
+        if 'jainam' not in account_key.lower():
+            try:
+                orders = client.get_orders('completed')
+            except:
+                orders=pd.DataFrame()
+        else:
+            try:
+                orders_dict = client.get_order_book()
+                df_orders = pd.DataFrame(orders_dict["result"])
+                orders = df_orders[df_orders["OrderStatus"] == "Filled"].reset_index(drop=True)
+            except:
+                orders=pd.DataFrame()
 
-    if orders.empty:
-        return
+        if orders.empty:
+            return
 
-    # # 2️⃣ Fetch existing orderIds ONCE
-    existing_ids = set(
-        TradeBook.objects.values_list("orderId", flat=True)
-    )
-
-    # 3️⃣ Prepare rows
-    new_rows = []
-    print(account_key)
-    for _, order in orders.iterrows():
-        normalized = normalize_order(order, account_key.lower())
-        if normalized["orderId"] not in existing_ids:
-            new_rows.append(TradeBook(**normalized))
-
-    # 4️⃣ Bulk insert
-    if new_rows:
-        TradeBook.objects.bulk_create(
-            new_rows,
-            ignore_conflicts=True
+        # # 2️⃣ Fetch existing orderIds ONCE
+        existing_ids = set(
+            TradeBook.objects.values_list("orderId", flat=True)
         )
-    
+
+        # 3️⃣ Prepare rows
+        new_rows = []
+        print(account_key)
+        for _, order in orders.iterrows():
+            normalized = normalize_order(order, account_key.lower())
+            if normalized["orderId"] not in existing_ids:
+                new_rows.append(TradeBook(**normalized))
+
+        # 4️⃣ Bulk insert
+        if new_rows:
+            TradeBook.objects.bulk_create(
+                new_rows,
+                ignore_conflicts=True
+            )
+    except:
+        pass
+        
 def start_background_job(account_key, client):
     t = Thread(
         target=fetch_and_insert_orders,
@@ -411,6 +415,231 @@ def get_ltp(req):
         result = fetch_ltp(positions)
         return JsonResponse(result)
     return HttpResponse('Get LTP')
+
+@login_required
+def cancelsl(req):
+    try:
+        masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+        body = json.loads(req.body)
+        # Extract sl_metadata from the parsed JSON data
+        metadata = body.get('sl_metadata')
+        data = metadata.rsplit('_', 3)
+        token_and_name = data[0]
+        quantity = data[1]
+        exchange = data[2]
+        token, account_holder = token_and_name.split('_', 1)
+        price=float(data[3])
+        for key in masterclass_dict:
+            if "jainam" in key.lower() and key==account_holder:
+                # get order book and cancel all
+                user_id = jainam_user_ids[key]
+                orders=masterclass_dict[key].get_order_book(user_id)
+                order_book=pd.DataFrame(orders['result'])
+                if not order_book.empty:
+                    order_book['ExchangeInstrumentID'] = order_book['ExchangeInstrumentID'].astype(str)
+                    token = str(token)
+                    filtered = order_book.loc[
+                        (order_book['ExchangeInstrumentID'] == token) & 
+                        (order_book['OrderType'].str.upper() == 'STOPLIMIT') & 
+                        (order_book['OrderStatus'].str.contains(r'Open|New|Replaced|Pending', na=False, case=False))
+                    ]
+                    if not filtered.empty:
+                        for row in filtered.itertuples(index=False):
+                            Thread(
+                                target=masterclass_dict[key].cancel_order,
+                                kwargs={
+                                    row.AppOrderID,
+                                    row.OrderUniqueIdentifier,
+                                    user_id
+                                }
+                            ).start()
+                    else:
+                        return JsonResponse({'success': True, 'message':'Orders Not Found'})
+                                
+                else:
+                    return JsonResponse({'success': True, 'message':'Orders Not Found'})
+            elif key==account_holder:
+                orders=masterclass_dict[key].get_orders()
+                order_book=pd.DataFrame(orders)
+                if not order_book.empty:
+                    order_book['instrument_token'] = order_book['instrument_token'].astype(str)
+                    token = str(token)
+                    filtered = order_book.loc[
+                        (order_book['instrument_token'] == token) & 
+                        (order_book['order_type'].str.upper() == 'SL')
+                    ]
+                    if not filtered.empty:
+                        for row in filtered.itertuples(index=False):
+                            Thread(
+                                target=masterclass_dict[key].cancel_order,
+                                kwargs={
+                                    row.oms_order_id
+                                }
+                            ).start()
+                    else:
+                        return JsonResponse({'success': True, 'message':'Orders Not Found'})
+                else:
+                    return JsonResponse({'success': True, 'message':'Orders Not Found'})
+        return JsonResponse({'success': True, 'message':'Orders Cancelled'})                
+    except:
+        return JsonResponse({'success': False, 'message':'Error Occured'})                
+
+@login_required
+def placesl(req):
+    try:
+        # if req.session.get("logged_in"):
+        # if r.get('logged_in')=='1':
+        if req.method == 'POST':
+            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+            maybe_start_account_jobs(masterclass_dict)
+            nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
+            banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
+            try:
+                if nifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                    nifty_freeze_qty=1800
+                if banknifty_freeze_qty is None or int(nifty_freeze_qty)<0:
+                    banknifty_freeze_qty=600
+            except:
+                nifty_freeze_qty=1800
+                banknifty_freeze_qty=600
+            sensex_freeze_qty=1000
+            kite_instruments = get_instruments_cached("NFO")
+            bfo_instruments = get_instruments_cached("BFO")
+            kite_instruments = kite_instruments[kite_instruments["segment"] == "NFO-OPT"]
+            nifty_lot_size=kite_instruments[kite_instruments['name'] == 'NIFTY']['lot_size'].iloc[0]
+            banknifty_lot_size=kite_instruments[kite_instruments['name'] == 'BANKNIFTY']['lot_size'].iloc[0]
+            kite_instruments["expiry"] = pd.to_datetime(kite_instruments["expiry"]).dt.date
+            bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
+            bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
+            sensex_lot_size=bfo_instruments['lot_size'].iloc[0]
+            
+            bfo_instruments["expiry"] = pd.to_datetime(bfo_instruments["expiry"]).dt.date
+            bfo_instruments = bfo_instruments[bfo_instruments["expiry"] >= date.today()]
+            body = json.loads(req.body)
+            # Extract sl_metadata from the parsed JSON data
+            metadata = body.get('sl_metadata')
+            data = metadata.rsplit('_', 3)
+            token_and_name = data[0]
+            quantity = data[1]
+            exchange = data[2]
+            token, account_holder = token_and_name.split('_', 1)
+            price=float(data[3])
+            for key in masterclass_dict:
+                if "jainam" not in key.lower():
+                    all_contracts=get_contracts()
+                    break
+            instrument=None
+            if re.search(r'B.*F.*O',exchange):
+                instrument='SENSEX'
+            else:
+                instrument = all_contracts[all_contracts['code'].astype(str) == str(token)].iloc[0]['symbol']
+                instrument = instrument.split()[0].upper()
+            order_qty=[]
+            order_side="BUY" if int(quantity) < 0 else "SELL"
+            if order_side=='BUY':
+                limit_price=price+3
+                price+=1
+            else:
+                limit_price=price-3
+                price-=1
+            quantity=abs(int(quantity))
+            match instrument:
+                case 'BANKNIFTY':
+                    while int(quantity)>0:
+                        if quantity>banknifty_freeze_qty:
+                            lots=math.floor(banknifty_freeze_qty/banknifty_lot_size)
+                            order_qty.append(lots*banknifty_lot_size)
+                            quantity-=(lots*banknifty_lot_size)
+                        else:
+                            lots=math.ceil(quantity/banknifty_lot_size)
+                            order_qty.append(lots*banknifty_lot_size)
+                            quantity-=(lots*banknifty_lot_size)
+                case 'NIFTY':
+                    while int(quantity)>0:
+                        if quantity>nifty_freeze_qty:
+                            lots=math.floor(nifty_freeze_qty/nifty_lot_size)
+                            order_qty.append(lots*nifty_lot_size)
+                            quantity-=(lots*nifty_lot_size)
+                        else:
+                            lots=math.ceil(quantity/nifty_lot_size)
+                            order_qty.append(lots*nifty_lot_size)
+                            quantity-=(lots*nifty_lot_size)
+                case 'SENSEX':
+                    while int(quantity)>0:
+                        if quantity>sensex_freeze_qty:
+                            lots=math.floor(sensex_freeze_qty/sensex_lot_size)
+                            order_qty.append(lots*sensex_lot_size)
+                            quantity-=(lots*sensex_lot_size)
+                        else:
+                            lots=math.ceil(quantity/sensex_lot_size)
+                            order_qty.append(lots*sensex_lot_size)
+                            quantity-=(lots*sensex_lot_size)
+            for key in masterclass_dict:
+                ## print(key,instrument,order_qty)
+                if "jainam" in key.lower() and key==account_holder:
+                    exchange_segment = exchange
+                    exchange_token = token
+                    product_type = "NRML"
+                    order_type = "STOPLIMIT"
+                    order_side = order_side
+                    time_in_force = "DAY"
+                    disclosed_qty = 0
+                    limit_price = limit_price
+                    stop_price = price
+                    identifier = "aabbcc"
+                    user_id = jainam_user_ids[key]
+                    for final_order_qty in order_qty:
+                        # print('jainam',final_order_qty)
+                        Thread(
+                            target=masterclass_dict[key].place_order, 
+                            kwargs={
+                                "exchangeSegment": exchange_segment,
+                                "exchangeInstrumentID": exchange_token,
+                                "productType": product_type,
+                                "orderType": order_type,
+                                "orderSide": order_side,
+                                "timeInForce": time_in_force,
+                                "disclosedQuantity": disclosed_qty,
+                                "orderQuantity": int(final_order_qty),
+                                "limitPrice": limit_price,
+                                "stopPrice": stop_price,
+                                "orderUniqueIdentifier": identifier,
+                                "clientID": user_id,
+                            }
+                        ).start()
+                elif key==account_holder:
+                    order={
+                        "instrument":token,
+                        "client_id": masterclass_dict[key].username,
+                        "disclosed_quantity": 0,
+                        "exchange": exchange,
+                        "instrument_token": token,
+                        "market_protection_percentage": 100,
+                        "order_side": order_side,
+                        "order_type": "STOP_LOSS",
+                        "product": "NRML",
+                        "quantity": int(quantity),
+                        "trigger_price": price,
+                        "validity": "DAY",
+                        "user_order_id": "1",
+                        "price": limit_price
+                    }
+                    # print('Master Trust Order ',order)
+                    for final_order_qty in order_qty:
+                        order['quantity']=int(final_order_qty)
+                        # print('Master Trust ',order)
+                        # b = masterclass_dict[i[0]].place_order(order1)
+                        Thread(
+                            target=masterclass_dict[key].place_order, args=(order,)
+                        ).start()
+            order_id='12345'
+            return JsonResponse({'success': True, 'order_id': order_id, 'message':'Sl Placed'})
+            # return redirect("/positions")
+        # else:
+        #     messages.info(req,'Please Login')
+        #     return redirect('/login')
+    except:
+        return JsonResponse({'success': False, 'message':'Error Occured'})                
 
 @login_required        
 def squareoff_strike(req):
@@ -1072,6 +1301,11 @@ def positions(req):
                             positions = masterclass_dict[key].get_position_netwise(user_id)["result"][
                                 "positionList"
                             ]
+                            try:
+                                orders=masterclass_dict[key].get_order_book(user_id)
+                                order_book=pd.DataFrame(orders['result'])
+                            except:
+                                order_book=pd.DataFrame()
                             iterator=0
                             break
                         except:
@@ -1112,7 +1346,8 @@ def positions(req):
                                 "Quantitys",
                                 "Price",
                                 "Side",
-                                "SquareOff"
+                                "SquareOff",
+                                "PlaceSL"
                             ]
                         )
                         pos_data=df.to_dict(orient='records')
@@ -1145,32 +1380,8 @@ def positions(req):
                             token=pos1['ExchangeInstrumentId']
                             if re.search(r'B.*F.*O', exchange):
                                 ltp = get_ltp_or_subscribe(7,token)
-                                # ws_connection.send(json.dumps({
-                                #     "a": "subscribe",
-                                #     "v": [[7, int(token)]],
-                                #     "m": "marketdata"
-                                # }))
-                                # ltp_key = f"7_{token}"
                             else:
                                 ltp = get_ltp_or_subscribe(2,token)
-                                # ws_connection.send(json.dumps({
-                                #     "a": "subscribe",
-                                #     "v": [[2, int(token)]],
-                                #     "m": "marketdata"
-                                # }))
-                                # ltp_key = f"2_{token}"
-                            # iterator=0
-                            # while iterator<2:
-                            #     if ltp_key in ltp_cache:
-                            #         iterator=0
-                            #         break
-                            #     time.sleep(1)
-                            #     ltp_cache=return_ltp_cache() 
-                            #     iterator+=1
-                            # try:
-                            #     ltp=ltp_cache[ltp_key]
-                            # except:
-                            #     ltp=0
                             if float(pos1['Quantity'])< 0:
                                 quantity = abs(float(pos1['Quantity']))
                                 price = pos1['ActualSellAveragePrice']
@@ -1184,34 +1395,37 @@ def positions(req):
                             pos['Quantitys']=quantity
                             pos['Price']=price
                             pos['Side']=side
-                            squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}"
+                            squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}_{price}"
                             grouped[str(pos["Strike"])].append(squareoff_id)
                             url = reverse('squareoff', kwargs={'id': squareoff_id})
-                            # url = f"{{% url 'squareoff' id='{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}' %}}"
-                            # pos["SquareOff"] = (
-                            #     '<form method="POST">'
-                            #     + '<button type="submit">'
-                            #     + f'<a href="{url}": target="_blank">'
-                            #     + "Squareoff"
-                            #     + "</a>"
-                            #     + "</button>"
-                            #     + "</form>"
-                            # )
                             pos["SquareOff"] = (
                                 f'<form action="{url}" method="POST" style="display:inline;">'
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                                 '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
                                 '</form>'
                             )
-                            # url_strike=reverse('squareoff_strike')
-                            # body_json = json.dumps(grouped[pos['Strike']])  # serialize list as JSON
-                            # pos["SquareOff Strike"] = (
-                            #     f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                            #     f'<input type="hidden" name="strike" value="{strike}"/>'
-                            #     f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            #     '<button type="submit">Squareoff Strikes</button>'
-                            #     '</form>'
-                            # )
+                            if not order_book.empty:
+                                try:
+                                    order_book['ExchangeInstrumentID'] = order_book['ExchangeInstrumentID'].astype(str)
+                                    filtered = order_book.loc[
+                                        (order_book['ExchangeInstrumentID'] == str(pos1["ExchangeInstrumentId"])) & 
+                                        (order_book['OrderType'].str.upper() == 'STOPLIMIT') & 
+                                        (order_book['OrderStatus'].str.contains(r'Open|New|Replaced|Pending', na=False, case=False))
+                                    ]
+
+                                    app_order_id = filtered['AppOrderID'].iloc[0] if not filtered.empty else ''
+                                except:
+                                    app_order_id=''
+                            else:
+                                app_order_id=''
+                            pos['PlaceSL'] = (
+                                f'<div class="sl-toggle-container" data-sl-metadata="{squareoff_id}">'
+                                f'<input type="hidden" class="order-id" value="{app_order_id}">'
+                                f'<button class="sl-toggle-btn">'
+                                f'{"Cancel SL" if app_order_id else "Place SL"}'
+                                f'</button>'
+                                f'</div>'
+                            )
                             data.loc[len(data)] = list(pos.values())
                             data = data.sort_values(
                                 by=["Instrument", "Expiry", "Type", "Strike"],
@@ -1221,9 +1435,15 @@ def positions(req):
                         xts_positions[key] = data
                     continue
                 iterator=0
+                df_position=pd.DataFrame()
                 while iterator<2:
                     try:
                         df_position = masterclass_dict[key].get_positions()
+                        try:
+                            orders=masterclass_dict[key].get_orders()
+                            order_book=pd.DataFrame(orders)
+                        except:
+                            order_book=pd.DataFrame()
                         # trades=masterclass_dict[key].get_trades()
                         ## print(df)
                         iterator=0
@@ -1284,55 +1504,8 @@ def positions(req):
                         exchange=str(row['exchange'])
                         if re.search(r'B.*F.*O', exchange):
                             ltp = get_ltp_or_subscribe(7,int(token))
-                            # ws_connection.send(json.dumps({
-                            #     "a": "subscribe",
-                            #     "v": [[7, int(token)]],
-                            #     "m": "marketdata"
-                            # }))
-                            # ltp_key = f"7_{token}"
                         else:
                             ltp = get_ltp_or_subscribe(2,int(token))
-                            # ws_connection.send(json.dumps({
-                            #     "a": "subscribe",
-                            #     "v": [[2, int(token)]],
-                            #     "m": "marketdata"
-                            # }))
-                            # ltp_key = f"2_{token}"
-                        # iterator=0
-                        # while iterator<2:
-                        #     if ltp_key in ltp_cache:
-                        #         iterator=0
-                        #         break
-                        #     time.sleep(1)
-                        #     ltp_cache=return_ltp_cache() 
-                        #     iterator+=1
-                        # try:
-                        #     ltp=ltp_cache[ltp_key]
-                        # except:
-                        #     ltp=0
-                        # try:
-                        #     filtered_trades = trades[trades['trading_symbol'] == row["trading_symbol"]]
-                            
-                        #     # Sum the trade_price column of the filtered trades
-                        #     # total_value = (filtered_trades['trade_quantity'] * filtered_trades['trade_price']).sum()
-                        #     average_trade_price = filtered_trades['trade_price'].mean()
-                        #     if row['net_quantity']>0:
-                        #         quantity = abs(int(row['net_quantity']))
-                        #         price = average_trade_price
-                        #         side = 'BUY'
-                        #     else:
-                        #         quantity = abs(int(row['net_quantity']))
-                        #         price = average_trade_price
-                        #         side = 'SELL'
-                        # except:
-                        #     if float(row['cf_sell_quantity']) != 0:
-                        #         quantity = row['cf_sell_quantity']
-                        #         price = float(row['actual_average_sell_price'])
-                        #         side = 'SELL'
-                        #     else:
-                        #         quantity = row['cf_buy_quantity']
-                        #         price = float(row['actual_average_buy_price'])
-                        #         side = 'BUY'
                         if float(row['cf_sell_quantity'])>0 and float(row['net_quantity'])<0:
                             quantity = float(abs(row['net_quantity']))
                             price = float(row['actual_average_sell_price'])
@@ -1433,13 +1606,44 @@ def positions(req):
                         'data-quantity="' + df['Quantitys'].astype(str) + '" '
                         'data-side="' + df['Side'].astype(str) + '"'
                     )
-                    df = df.drop(columns=['Price','Quantitys','Side'])
+                    # df["sl_url"] = df.apply(
+                    #     lambda row: reverse("placesl",kwargs={"id": f"{row['Token']}_{key}_{row['Quantity']}_{row['Exchange']}_{row['Price']}"},),
+                    #     axis=1
+                    # )
+                    df = df.drop(columns=['Quantitys','Side'])
                     # Mark LTP column cell for live update
                     df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
                     df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
                     df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                     df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
 
+                    if not order_book.empty:
+                        try:
+                            sl_map = (
+                                order_book[order_book['order_type'].str.upper() == 'SL']
+                                .drop_duplicates(subset='instrument_token', keep='first')
+                                .set_index('instrument_token')['oms_order_id']
+                            )
+
+                            sl_map.index = sl_map.index.astype(str)
+                            df['Token'] = df['Token'].astype(str)
+                            df['orderid'] = df['Token'].map(sl_map)
+                        except:
+                            df['orderid']=None
+                    else:
+                        df['orderid']=None
+                    df['PlaceSL'] = df.apply(
+                        lambda row: (
+                            f'<div class="sl-toggle-container" '
+                            f'data-sl-metadata="{row["Token"]}_{key}_{row["Quantity"]}_{row["Exchange"]}_{row["Price"]}">'
+                            f'<input type="hidden" class="order-id" value="{row["orderid"] if pd.notna(row["orderid"]) else ""}">'
+                            f'<button class="sl-toggle-btn">'
+                            f'{"Cancel SL" if pd.notna(row["orderid"]) else "Place SL"}'
+                            f'</button>'
+                            f'</div>'
+                        ),
+                        axis=1
+                    )
 
                     for index, row in df.iterrows():
                         exchange = row['Exchange']  # or whatever column holds the key
@@ -1449,7 +1653,7 @@ def positions(req):
                         threads.append(t)
 
                     # Hide Token and Exchange from display
-                    df = df.drop(columns=['Token', 'Exchange'])
+                    df = df.drop(columns=['Token', 'Exchange','Price', 'orderid'])
 
                     # 4) IMPORTANT: Drop __row_attr__ from display BEFORE to_html
                     # row_attrs = df['__row_attr__'].tolist()  # save separately
@@ -1963,9 +2167,6 @@ def login(req):
         else:
             messages.info(req,'Invalid Credentials')
     return render(req,'login.html')
-
-    
-    
 
 @login_required
 def logout(req):

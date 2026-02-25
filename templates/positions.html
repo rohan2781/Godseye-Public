@@ -173,6 +173,30 @@ table th {
     background: #0062cc;
 }
 
+.sl-toggle-container {
+    margin: 10px;
+    display: inline-block;
+    text-align: center;
+}
+
+.sl-toggle-btn {
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+.sl-toggle-btn:hover {
+    background-color: #0056b3;
+}
+
+.order-id {
+    display: none; /* Hidden field for order ID */
+}
 </style>
 </head>
 <body>
@@ -223,7 +247,6 @@ table th {
 <!-- ============ SCRIPTS ============ -->
 <script>
 
-
 /* Snackbar auto-hide */
 document.addEventListener('DOMContentLoaded', () => {
     const snackbars = document.querySelectorAll('.snackbar');
@@ -241,7 +264,101 @@ document.addEventListener('DOMContentLoaded', () => {
             el.classList.add("pnl-negative");
         }
     });
+    document.querySelectorAll('.sl-toggle-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const slMetadata = button.closest('.sl-toggle-container').getAttribute('data-sl-metadata');
+            toggleButton(slMetadata);  // Toggle the button and handle the action
+        });
+    });
 });
+
+
+function showSnackbar(message, type = "info") {
+    let container = document.getElementById("snackbar-container");
+
+    // Create container if it doesn't exist (no Django messages case)
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "snackbar-container";
+        document.body.appendChild(container);
+    }
+
+    const snackbar = document.createElement("div");
+    snackbar.className = `snackbar ${type}`;
+    snackbar.textContent = message;
+
+    container.appendChild(snackbar);
+
+    // Trigger animation
+    setTimeout(() => snackbar.classList.add("show"), 10);
+
+    // Remove after 3 seconds
+    setTimeout(() => {
+        snackbar.classList.remove("show");
+        setTimeout(() => snackbar.remove(), 300);
+    }, 3000);
+}
+
+function toggleSlOrder(slMetadata, orderId = "") {
+    const csrfToken = '{{ csrf_token }}';
+    const placeSlUrl = "{% url 'placesl' %}";
+    const cancelSlUrl = "{% url 'cancelsl' %}";
+
+    const isCancel = Boolean(orderId);
+    const url = isCancel ? cancelSlUrl : placeSlUrl;
+    const bodyData = { sl_metadata: slMetadata };
+
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify(bodyData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+
+            const container = document.querySelector(
+                `.sl-toggle-container[data-sl-metadata="${slMetadata}"]`
+            );
+
+            const orderInput = container.querySelector('.order-id');
+            const button = container.querySelector('.sl-toggle-btn');
+
+            if (!isCancel) {
+                // Order was placed
+                orderInput.value = data.order_id;
+                button.textContent = "Cancel SL";
+            } else {
+                // Order was cancelled
+                orderInput.value = "";
+                button.textContent = "Place SL";
+            }
+            showSnackbar(data.message, "success");
+
+        }
+        showSnackbar(data.message || "Something went wrong", "error");
+
+    })
+    .catch(error => {
+        showSnackbar("Network error. Please try again.", "error");
+    });
+}
+
+// Function to toggle the button text and send the appropriate request
+function toggleButton(slMetadata) {
+    const container = document.querySelector(
+        `.sl-toggle-container[data-sl-metadata="${slMetadata}"]`
+    );
+
+    const orderInput = container.querySelector('.order-id');
+    const orderId = orderInput.value;
+
+    toggleSlOrder(slMetadata, orderId);
+}
+
 
 /* Apply PE/CE background colors */
 document.querySelectorAll("td").forEach(td => {
