@@ -448,9 +448,9 @@ def cancelsl(req):
                             Thread(
                                 target=masterclass_dict[key].cancel_order,
                                 kwargs={
-                                    row.AppOrderID,
-                                    row.OrderUniqueIdentifier,
-                                    user_id
+                                    'appOrderID':row.AppOrderID,
+                                    'orderUniqueIdentifier':row.OrderUniqueIdentifier,
+                                    'clientID':user_id
                                 }
                             ).start()
                     else:
@@ -471,10 +471,7 @@ def cancelsl(req):
                     if not filtered.empty:
                         for row in filtered.itertuples(index=False):
                             Thread(
-                                target=masterclass_dict[key].cancel_order,
-                                kwargs={
-                                    row.oms_order_id
-                                }
+                                target=masterclass_dict[key].cancel_order_id, args=(row.oms_order_id,)
                             ).start()
                     else:
                         return JsonResponse({'success': True, 'message':'Orders Not Found'})
@@ -536,6 +533,7 @@ def placesl(req):
                 instrument = instrument.split()[0].upper()
             order_qty=[]
             order_side="BUY" if int(quantity) < 0 else "SELL"
+            price=round(round(price / 0.05) * 0.05, 2)
             if order_side=='BUY':
                 limit_price=price+3
                 price+=1
@@ -589,7 +587,6 @@ def placesl(req):
                     identifier = "aabbcc"
                     user_id = jainam_user_ids[key]
                     for final_order_qty in order_qty:
-                        # print('jainam',final_order_qty)
                         Thread(
                             target=masterclass_dict[key].place_order, 
                             kwargs={
@@ -616,7 +613,7 @@ def placesl(req):
                         "instrument_token": token,
                         "market_protection_percentage": 100,
                         "order_side": order_side,
-                        "order_type": "STOP_LOSS",
+                        "order_type": "SL",
                         "product": "NRML",
                         "quantity": int(quantity),
                         "trigger_price": price,

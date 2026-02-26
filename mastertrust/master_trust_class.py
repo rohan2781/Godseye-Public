@@ -332,6 +332,16 @@ class MasterTrustUser:
         return json.loads(order_req.text)
 
 
+    def cancel_order_id(self,order_id):
+        try:
+            url=self.return_url('cancel_order')+str(order_id)+'?client_id='+str(self.username)
+            headers=self.get_authorization_header()
+            payload={}
+            response = requests.request("DELETE", url, headers=headers, data=payload)
+            return json.loads(response.text)
+        except:
+            return 
+
     def cancel_order(self,order_id):
         df = self.get_orders()
         df = df[df['oms_order_id']== str(order_id)]
