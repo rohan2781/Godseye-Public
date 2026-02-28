@@ -93,18 +93,18 @@ def maybe_start_account_jobs(masterclass_dict):
 
 def get_contracts():
     current_folder = os.path.dirname(os.path.abspath(__file__))
-    print(current_folder)
+    # print(current_folder)
     flag=1
     contract_files = [f for f in os.listdir(current_folder)
                         if os.path.isfile(os.path.join(current_folder, f)) and f.startswith("contracts")]
     # List all files starting with 'contracts'
     try:
         if (contract_files[0].split('_')[2].split('.')[0]==datetime.today().strftime("%d%m%Y")):
-            print('heya')
+            # print('heya')
             # file_path = os.path.join(current_folder, 'contracts_NSE_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
             # nse=pd.read_csv(file_path)
             file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
-            print(file_path)
+            # print(file_path)
             nfo=pd.read_csv(file_path)
             return nfo
             # r.set('nse', pickle.dumps(nse))
@@ -119,10 +119,11 @@ def get_contracts():
             file_to_delete = os.path.join(current_folder, f)
             try:
                 os.remove(file_to_delete)
-                print(f"Deleted: {file_to_delete}")
+                # print(f"Deleted: {file_to_delete}")
             except Exception as e:
-                print(f"Error deleting {file_to_delete}: {e}")
-        print("Refreshing global data from APIs...")
+                pass
+                # print(f"Error deleting {file_to_delete}: {e}")
+        # print("Refreshing global data from APIs...")
         contracts={}
         # nse_contracts = json.loads(requests.get('https://masterswift.mastertrust.co.in/api/v2/contracts.json?exchanges=NSE').text)
         # contracts['NSE'] = pd.DataFrame()
@@ -139,7 +140,7 @@ def get_contracts():
             # self.contracts['NFO'] = self.contracts['NFO'].append(pd.DataFrame(nfo_contracts[x]),ignore_index = True)
             contracts['NFO'] = pd.concat([pd.DataFrame(nfo_contracts[x]) for x in nfo_contracts], ignore_index=True)
         file_path = os.path.join(current_folder, 'contracts_NFO_'+str(datetime.today().strftime("%d%m%Y")+'.csv'))
-        print(file_path)
+        # print(file_path)
         contracts['NFO'].to_csv(file_path)
         return contracts['NFO']
             # r.set('nfo', pickle.dumps(contracts['NFO']))
@@ -287,7 +288,7 @@ def fetch_and_insert_orders(account_key, client):
 
         # 3️⃣ Prepare rows
         new_rows = []
-        print(account_key)
+        # print(account_key)
         for _, order in orders.iterrows():
             normalized = normalize_order(order, account_key.lower())
             if normalized["orderId"] not in existing_ids:
@@ -320,23 +321,18 @@ def get_ltp_or_subscribe(exchange_code, token):
         return float(ltp)
 
     # 2. Add subscription request to Redis SET
-    sub_key = f"{exchange_code}_{token}"
-    r.sadd("md_subscriptions", sub_key)
+    r.sadd("md_subscriptions", ltp_key)
 
     # 3. Give WS worker a short time to fetch and push LTP
-    time.sleep(0.10)
-
-    # 4. Try again
-    ltp = r.get(ltp_key)
-    if ltp is not None:
-        return float(ltp)
-
+    timeout=2
+    start = time.time()
+    while time.time() - start < timeout:
+        l = r.get(ltp_key)
+        if l is not None:
+            return float(l)
+        time.sleep(0.05)
     # 5. Still nothing → return 0
     return 0
-
-
-# def get_ltp(exchange_code, token):
-#     return r.get(f"{exchange_code}_{token}")
 
 def get_instruments_cached(exchange):
     """Fetch and cache instruments for a given exchange."""
@@ -1272,16 +1268,15 @@ def positions(req):
             bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
             bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-            maybe_start_account_jobs(masterclass_dict)
-            # response=master_connection(req.user)
-            # masterclass_dict=response[0]
-            # clients=response[1]
-            # jainam_user_ids=response[2]
-            # ws_connection=response[3]
-            # ltp_cache=response[4]
+            t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict),
+                daemon=True
+            )
+            t.start()
+            # maybe_start_account_jobs(masterclass_dict)
             client_list = []
             arr = []
-            titles = []
             xts_positions = {}
             threads = []
             master_dfs={}
@@ -1290,25 +1285,43 @@ def positions(req):
                 # print(key)  
                 # client_list.append(key)
                 if 'jainam' in key.lower():
+                    # print(key)
                     user_id = jainam_user_ids[key]
                     iterator=0
                     positions=[]
                     while iterator<2:
                         try:
-                            positions = masterclass_dict[key].get_position_netwise(user_id)["result"][
-                                "positionList"
-                            ]
+                            positions = masterclass_dict[key].get_position_netwise(user_id)["result"]["positionList"]
                             try:
                                 orders=masterclass_dict[key].get_order_book(user_id)
                                 order_book=pd.DataFrame(orders['result'])
                             except:
                                 order_book=pd.DataFrame()
-                            iterator=0
-                            break
+                            iterator=3
                         except:
                             iterator+=1
                     df_position=pd.DataFrame(positions)
-                    if not df_position.empty:
+                    data = pd.DataFrame(
+                        columns=[
+                            "Instrument",
+                            "Expiry",
+                            "Strike",
+                            "Type",
+                            "Quantity",
+                            "LTP",
+                            "Token",
+                            "Exchange",
+                            "PNL",
+                            "ClosedPNL",
+                            "Quantitys",
+                            "Price",
+                            "Side",
+                            "SquareOff",
+                            "PlaceSL"
+                        ]
+                    )
+                    if (not df_position.empty and 'TradingSymbol' in df_position.columns and df_position['TradingSymbol'].astype(str).str.contains(r'\b(SENSEX|NIFTY|BANKNIFTY)\b', case=False, na=False).any()):
+                        # print('inside position',key)
                         df_position = df_position[
                             df_position['TradingSymbol'].str.contains(
                                 r'\b(SENSEX|NIFTY|BANKNIFTY)\b',
@@ -1328,29 +1341,10 @@ def positions(req):
                         )
                         df.fillna(0, inplace=True)
                         ## print(f"{key} positions: {positions}")
-                        data = pd.DataFrame(
-                            columns=[
-                                "Instrument",
-                                "Expiry",
-                                "Strike",
-                                "Type",
-                                "Quantity",
-                                "LTP",
-                                "Token",
-                                "Exchange",
-                                "PNL",
-                                "ClosedPNL",
-                                "Quantitys",
-                                "Price",
-                                "Side",
-                                "SquareOff",
-                                "PlaceSL"
-                            ]
-                        )
                         pos_data=df.to_dict(orient='records')
                         for pos1 in pos_data:
-                            if int(pos1["Quantity"]) == 0:
-                                continue
+                            # if int(pos1["Quantity"]) == 0:
+                            #     continue
                             pos = {}
                             # ## print(pos1)
                             
@@ -1376,9 +1370,20 @@ def positions(req):
                             exchange=pos1["ExchangeSegment"]
                             token=pos1['ExchangeInstrumentId']
                             if re.search(r'B.*F.*O', exchange):
-                                ltp = get_ltp_or_subscribe(7,token)
+                                t = Thread(
+                                    target=get_ltp_or_subscribe,
+                                    args=(7,token),
+                                    daemon=True
+                                )
+                                t.start()
                             else:
-                                ltp = get_ltp_or_subscribe(2,token)
+                                t = Thread(
+                                    target=get_ltp_or_subscribe,
+                                    args=(2,token),
+                                    daemon=True
+                                )
+                                t.start()
+                            ltp=0
                             if float(pos1['Quantity'])< 0:
                                 quantity = abs(float(pos1['Quantity']))
                                 price = pos1['ActualSellAveragePrice']
@@ -1429,10 +1434,11 @@ def positions(req):
                                 ascending=[True, True, False, True],
                             )
                     ## print('jainam Data: ',data)
-                        xts_positions[key] = data
+                    xts_positions[key] = data
                     continue
                 iterator=0
                 df_position=pd.DataFrame()
+                # print(key)
                 while iterator<2:
                     try:
                         df_position = masterclass_dict[key].get_positions()
@@ -1447,7 +1453,25 @@ def positions(req):
                         break
                     except:
                         iterator+=1
-                if not df_position.empty:
+                pos = pd.DataFrame(
+                    columns=[
+                        "Instrument",
+                        "Expiry",
+                        "Strike",
+                        "Type",
+                        "Quantity",
+                        "LTP",
+                        "Token",
+                        "Exchange",
+                        "PNL",
+                        "ClosedPNL",
+                        "Quantitys",
+                        "Price",
+                        "Side"
+                    ]
+                )
+                if (not df_position.empty and 'trading_symbol' in df_position.columns and df_position['trading_symbol'].astype(str).str.startswith(('SENSEX', 'NIFTY', 'BANKNIFTY')).any()):
+                    # print('inside position',key)
                     df_position = df_position[df_position['trading_symbol'].str.startswith(('SENSEX', 'NIFTY', 'BANKNIFTY'))]
                     df_tradebook=generate_closed_pnl(key.lower())
                     df_position['instrument_token'] = df_position['instrument_token'].astype(int)
@@ -1460,23 +1484,6 @@ def positions(req):
                         how='left'
                     )
                     df.fillna(0, inplace=True)
-                    pos = pd.DataFrame(
-                        columns=[
-                            "Instrument",
-                            "Expiry",
-                            "Strike",
-                            "Type",
-                            "Quantity",
-                            "LTP",
-                            "Token",
-                            "Exchange",
-                            "PNL",
-                            "ClosedPNL",
-                            "Quantitys",
-                            "Price",
-                            "Side"
-                        ]
-                    )
                     # client_list.append(key)
                     for index, row in df.iterrows():
                         instrument = row["symbol"]
@@ -1500,9 +1507,20 @@ def positions(req):
                         token = str(row["instrument_token"])
                         exchange=str(row['exchange'])
                         if re.search(r'B.*F.*O', exchange):
-                            ltp = get_ltp_or_subscribe(7,int(token))
+                            t = Thread(
+                                target=get_ltp_or_subscribe,
+                                args=(7,int(token)),
+                                daemon=True
+                            )
+                            t.start()
                         else:
-                            ltp = get_ltp_or_subscribe(2,int(token))
+                            t = Thread(
+                                target=get_ltp_or_subscribe,
+                                args=(2,int(token)),
+                                daemon=True
+                            )
+                            t.start()
+                        ltp=0
                         if float(row['cf_sell_quantity'])>0 and float(row['net_quantity'])<0:
                             quantity = float(abs(row['net_quantity']))
                             price = float(row['actual_average_sell_price'])
@@ -1572,27 +1590,7 @@ def positions(req):
                     for strike, items in new_grouped.items():
                         grouped[strike].extend(items)
 
-                    # def make_squareoff_form(row):
-                    #     strike = row.strike
-                    #     if strike in grouped:
-                    #         body_json = json.dumps(grouped[strike])
-                    #         return (
-                    #             f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                    #             f'<input type="hidden" name="strike" value="{strike}"/>'
-                    #             f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                    #             '<button type="submit">Squareoff Strikes</button>'
-                    #             '</form>'
-                    #         )
-                    #     return ""
-                    # df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
-
                     df = df.drop(["url","rollover_url"], axis=1)
-
-                    # df['__row_attr__'] = (
-                    #     'data-token="' + df['Token'].astype(str) + '" '
-                    #     'data-exchange="' + df['Exchange'].astype(str) + '" '
-                    #     f'data-account="{key}"'
-                    # )
 
                     df['__row_attr__'] = (
                         'data-token="' + df['Token'].astype(str) + '" '
@@ -1603,10 +1601,6 @@ def positions(req):
                         'data-quantity="' + df['Quantitys'].astype(str) + '" '
                         'data-side="' + df['Side'].astype(str) + '"'
                     )
-                    # df["sl_url"] = df.apply(
-                    #     lambda row: reverse("placesl",kwargs={"id": f"{row['Token']}_{key}_{row['Quantity']}_{row['Exchange']}_{row['Price']}"},),
-                    #     axis=1
-                    # )
                     df = df.drop(columns=['Quantitys','Side'])
                     # Mark LTP column cell for live update
                     df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
@@ -1658,82 +1652,100 @@ def positions(req):
 
                     # master_dfs.append(df)
                     master_dfs[key]=df
+                else:
+                    master_dfs[key]=pos
             ## print('Group ',grouped)
             # print('MasterTrust',master_dfs.keys())
             url_strike=reverse('squareoff_strike')
             for key in master_dfs:
                 df = master_dfs[key].copy()
-                def make_squareoff_form(row):
-                    strike = row.Strike
-                    if strike in grouped:
-                        body_json = json.dumps(grouped[strike])
-                        return (
-                            f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                            f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                            f'<input type="hidden" name="strike" value="{strike}"/>'
-                            f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
-                            '</form>'
+                if not df.empty:
+                    def make_squareoff_form(row):
+                        strike = row.Strike
+                        if strike in grouped:
+                            body_json = json.dumps(grouped[strike])
+                            return (
+                                f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                                f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                                f'<input type="hidden" name="strike" value="{strike}"/>'
+                                f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                                '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
+                                '</form>'
+                            )
+                        return ""
+                    df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+                    sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
+                    df['Type_order'] = df['Type'].map(sort_order)
+                    df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
+
+                    final_rows = []
+                    numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+
+                    for instrument, inst_df in df.groupby('Instrument', sort=False):
+                        final_rows.append(inst_df)
+
+                        summary = inst_df[numeric_cols].sum()
+
+                        summary_row = {col: '' for col in df.columns}
+                        summary_row['Instrument'] = f'{instrument} TOTAL'
+                        initial_pnl = round(summary['_PNL_NUM'], 2)
+                        summary_row['PNL'] = (
+                            f'<span class="pnl-total" data-value="{initial_pnl}">'
+                            f'{initial_pnl}'
+                            f'</span>'
                         )
-                    return ""
-                df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
-                sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
-                df['Type_order'] = df['Type'].map(sort_order)
-                df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
+                        summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
+                        summary_row['SquareOff Strike'] = ''
+                        summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
-                final_rows = []
-                numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+                        final_rows.append(pd.DataFrame([summary_row]))
 
-                for instrument, inst_df in df.groupby('Instrument', sort=False):
-                    final_rows.append(inst_df)
-
-                    summary = inst_df[numeric_cols].sum()
-
-                    summary_row = {col: '' for col in df.columns}
-                    summary_row['Instrument'] = f'{instrument} TOTAL'
-                    initial_pnl = round(summary['_PNL_NUM'], 2)
-                    summary_row['PNL'] = (
-                        f'<span class="pnl-total" data-value="{initial_pnl}">'
-                        f'{initial_pnl}'
-                        f'</span>'
-                    )
-                    summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
-                    summary_row['SquareOff Strike'] = ''
-                    summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
-
-                    final_rows.append(pd.DataFrame([summary_row]))
-
-                if final_rows:
-                    df = pd.concat(final_rows, ignore_index=True)
-                else:
-                    df = pd.DataFrame(columns=df.columns)
-                df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
-
-                row_attrs = df['__row_attr__'].tolist()  # save separately
-                df = df.drop(columns=['__row_attr__'])
-
-                # 5) Now generate HTML
-                html = df.to_html(classes="data", escape=False, index=False)
-
-                # 6) Inject data attributes to each <tr>
-                lines = html.splitlines()
-                final_html = []
-                row_iter = iter(row_attrs)
-                for line in lines:
-                    if line.strip().startswith('<tr>'):
-                        attrs = next(row_iter)
-                        final_html.append(line.replace('<tr>', f'<tr {attrs}>'))
+                    if final_rows:
+                        df = pd.concat(final_rows, ignore_index=True)
                     else:
-                        final_html.append(line)
+                        df = pd.DataFrame(columns=df.columns)
+                    df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
-                html = '\n'.join(final_html)                
-                html = re.sub(
-                    r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
-                    r'<tr class="instrument-total"><td colspan="6">\1</td>',
-                    html,
-                    flags=re.S
-                )
+                    row_attrs = df['__row_attr__'].tolist()  # save separately
+                    df = df.drop(columns=['__row_attr__'])
 
+                    # 5) Now generate HTML
+                    html = df.to_html(classes="data", escape=False, index=False)
+
+                    # 6) Inject data attributes to each <tr>
+                    lines = html.splitlines()
+                    final_html = []
+                    row_iter = iter(row_attrs)
+                    for line in lines:
+                        if line.strip().startswith('<tr>'):
+                            attrs = next(row_iter)
+                            final_html.append(line.replace('<tr>', f'<tr {attrs}>'))
+                        else:
+                            final_html.append(line)
+
+                    html = '\n'.join(final_html)                
+                    html = re.sub(
+                        r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
+                        r'<tr class="instrument-total"><td colspan="6">\1</td>',
+                        html,
+                        flags=re.S
+                    )
+                else:
+                    # Create empty table structure
+                    html = df.to_html(classes="data", escape=False, index=False)
+
+                    # Replace empty tbody with single "No Positions" row
+                    colspan = len(df.columns)
+
+                    html = re.sub(
+                        r'<tbody>\s*</tbody>',
+                        f'<tbody><tr class="no-positions-row">'
+                        f'<td colspan="{colspan}" style="text-align:center; font-weight:600;">'
+                        f'No Positions'
+                        f'</td></tr></tbody>',
+                        html,
+                        flags=re.S
+                    )
                 arr.append(html)
                 client_list.append(key)
             
@@ -1742,117 +1754,127 @@ def positions(req):
             # print(xts_positions.keys())
             for key in xts_positions:
                 df = xts_positions[key].copy()
-
-                # 1) Create row attributes BEFORE dropping columns
-                # df['__row_attr__'] = (
-                #     'data-token="' + df['Token'].astype(str) + '" '
-                #     'data-exchange="' + df['Exchange'].astype(str) + '" '
-                #     f'data-account="{key}"'
-                # )
-                df['__row_attr__'] = (
-                    'data-token="' + df['Token'].astype(str) + '" ' +
-                    'data-exchange="' + df['Exchange'].astype(str) + '" ' +
-                    'data-account="' + key + '" ' +
-                    'data-instrument="' + df['Instrument'].astype(str) + '" ' +
-                    'data-price="' + df['Price'].astype(str) + '" ' +
-                    'data-quantity="' + df['Quantitys'].astype(str) + '" ' +
-                    'data-side="' + df['Side'].astype(str) + '"'
-                )
-                
-                df = df.drop(columns=['Price','Quantitys','Side'])
-                # 2) Mark LTP column cell with class="ltp-value"
-                df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
-                df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
-                df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
-                df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
-                def make_squareoff_form(row):
-                    strike = row.Strike
-                    if strike in grouped:
-                        body_json = json.dumps(grouped[strike])
-                        return (
-                            f'<form action="{url_strike}" method="POST" style="display:inline;">'
-                            f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
-                            f'<input type="hidden" name="strike" value="{strike}"/>'
-                            f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                            '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
-                            '</form>'
-                        )
-                    return ""
-                df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
-                for index, row in df.iterrows():
-                    exchange = row['Exchange']  # or whatever column holds the key
-                    token = row['Token']
-                    t = Thread(target=subscribe_row, args=(exchange, token))
-                    t.start()
-                    threads.append(t)
-                    
-                # 3) Hide Token and Exchange from display
-                df = df.drop(columns=['Token', 'Exchange'])
-
-                # 4) Save row attributes in a variable THEN drop column so it doesn't show
-
-                sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
-                df['Type_order'] = df['Type'].map(sort_order)
-                df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike'])
-                df=df.drop(columns='Type_order')
-
-                final_rows = []
-                numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
-
-                for instrument, inst_df in df.groupby('Instrument', sort=False):
-                    final_rows.append(inst_df)
-
-                    summary = inst_df[numeric_cols].sum()
-
-                    summary_row = {col: '' for col in df.columns}
-                    summary_row['Instrument'] = f'{instrument} TOTAL'
-                    initial_pnl = round(summary['_PNL_NUM'], 2)
-                    summary_row['PNL'] = (
-                        f'<span class="pnl-total" data-value="{initial_pnl}">'
-                        f'{initial_pnl}'
-                        f'</span>'
+                if not df.empty:
+                    df['__row_attr__'] = (
+                        'data-token="' + df['Token'].astype(str) + '" ' +
+                        'data-exchange="' + df['Exchange'].astype(str) + '" ' +
+                        'data-account="' + key + '" ' +
+                        'data-instrument="' + df['Instrument'].astype(str) + '" ' +
+                        'data-price="' + df['Price'].astype(str) + '" ' +
+                        'data-quantity="' + df['Quantitys'].astype(str) + '" ' +
+                        'data-side="' + df['Side'].astype(str) + '"'
                     )
-                    summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
-                    summary_row['SquareOff Strike'] = ''
-                    summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
+                    
+                    df = df.drop(columns=['Price','Quantitys','Side'])
+                    # 2) Mark LTP column cell with class="ltp-value"
+                    df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
+                    df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
+                    df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
+                    df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
+                    def make_squareoff_form(row):
+                        strike = row.Strike
+                        if strike in grouped:
+                            body_json = json.dumps(grouped[strike])
+                            return (
+                                f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                                f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                                f'<input type="hidden" name="strike" value="{strike}"/>'
+                                f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                                '<button type="submit" class="squareoff-btn">Sq Off All Acc</button>'
+                                '</form>'
+                            )
+                        return ""
+                    df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+                    for index, row in df.iterrows():
+                        exchange = row['Exchange']  # or whatever column holds the key
+                        token = row['Token']
+                        t = Thread(target=subscribe_row, args=(exchange, token))
+                        t.start()
+                        threads.append(t)
+                        
+                    # 3) Hide Token and Exchange from display
+                    df = df.drop(columns=['Token', 'Exchange'])
 
-                    final_rows.append(pd.DataFrame([summary_row]))
+                    # 4) Save row attributes in a variable THEN drop column so it doesn't show
 
-                if final_rows:
-                    df = pd.concat(final_rows, ignore_index=True)
-                else:
-                    df = pd.DataFrame(columns=df.columns)
-                df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
+                    sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
+                    df['Type_order'] = df['Type'].map(sort_order)
+                    df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike'])
+                    df=df.drop(columns='Type_order')
 
-                row_attrs = df['__row_attr__'].tolist()
-                df = df.drop(columns=['__row_attr__'])
+                    final_rows = []
+                    numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
 
-                # 5) Render table normally (no __row_attr__ visible)
-                html = df.to_html(
-                    classes="data",
-                    escape=False,
-                    index=False,
-                    table_id="positions"
-                )
+                    for instrument, inst_df in df.groupby('Instrument', sort=False):
+                        final_rows.append(inst_df)
 
-                # 6) Insert row attributes into each <tr>
-                lines = html.splitlines()
-                final_html = []
-                row_iter = iter(row_attrs)
-                for line in lines:
-                    if line.strip().startswith('<tr>'):
-                        attrs = next(row_iter)
-                        final_html.append(line.replace('<tr>', f'<tr {attrs}>'))
+                        summary = inst_df[numeric_cols].sum()
+
+                        summary_row = {col: '' for col in df.columns}
+                        summary_row['Instrument'] = f'{instrument} TOTAL'
+                        initial_pnl = round(summary['_PNL_NUM'], 2)
+                        summary_row['PNL'] = (
+                            f'<span class="pnl-total" data-value="{initial_pnl}">'
+                            f'{initial_pnl}'
+                            f'</span>'
+                        )
+                        summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
+                        summary_row['SquareOff Strike'] = ''
+                        summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
+
+                        final_rows.append(pd.DataFrame([summary_row]))
+
+                    if final_rows:
+                        df = pd.concat(final_rows, ignore_index=True)
                     else:
-                        final_html.append(line)
+                        df = pd.DataFrame(columns=df.columns)
+                    df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
 
-                html = '\n'.join(final_html)
-                html = re.sub(
-                    r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
-                    r'<tr class="instrument-total"><td colspan="6">\1</td>',
-                    html,
-                    flags=re.S
-                )
+                    row_attrs = df['__row_attr__'].tolist()
+                    df = df.drop(columns=['__row_attr__'])
+
+                    # 5) Render table normally (no __row_attr__ visible)
+                    html = df.to_html(
+                        classes="data",
+                        escape=False,
+                        index=False,
+                        table_id="positions"
+                    )
+
+                    # 6) Insert row attributes into each <tr>
+                    lines = html.splitlines()
+                    final_html = []
+                    row_iter = iter(row_attrs)
+                    for line in lines:
+                        if line.strip().startswith('<tr>'):
+                            attrs = next(row_iter)
+                            final_html.append(line.replace('<tr>', f'<tr {attrs}>'))
+                        else:
+                            final_html.append(line)
+
+                    html = '\n'.join(final_html)
+                    html = re.sub(
+                        r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
+                        r'<tr class="instrument-total"><td colspan="6">\1</td>',
+                        html,
+                        flags=re.S
+                    )
+                else:
+                    # Create empty table structure
+                    html = df.to_html(classes="data", escape=False, index=False)
+
+                    # Replace empty tbody with single "No Positions" row
+                    colspan = len(df.columns)
+
+                    html = re.sub(
+                        r'<tbody>\s*</tbody>',
+                        f'<tbody><tr class="no-positions-row">'
+                        f'<td colspan="{colspan}" style="text-align:center; font-weight:600;">'
+                        f'No Positions'
+                        f'</td></tr></tbody>',
+                        html,
+                        flags=re.S
+                    )
 
                 arr.append(html)
                 client_list.append(key)
@@ -2169,7 +2191,6 @@ def login(req):
 def logout(req):
     # try:
         # r.delete('accounts_global')
-        print(req.user)
         user=Users.objects.filter(username=req.user).first()
         r.delete(str(user.userid))
         r.delete("refresh_time_"+str(req.user))

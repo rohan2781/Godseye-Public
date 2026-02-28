@@ -22,8 +22,9 @@ git status
 git stash
 git pull origin main
 git stash pop
-gittoken-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
+gittoken-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
 
+sudo systemctl status redis
 redis-cli FLUSHALL
 
 sudo nano /etc/systemd/system/ws.service
@@ -40,5 +41,21 @@ sudo nano /etc/postgresql/16/main/pg_hba.conf
 sudo -u postgres psql
 CREATE DATABASE Godseye;
 \c Godseye
-\d "TradeBook" ## to verify if table created
+\dt # to verify all the tables in db
 sudo systemctl start postgresql
+
+sudo -i -u postgres
+psql godseye
+
+
+
+cron setup
+
+mkdir -p /home/ubuntu/godseye/logs
+crontab -e  (use nano) same cmd is use to open the file
+add this below line in the editor:
+30 10 * * 1-5 /home/ubuntu/Godseye/myenv/bin/python /home/ubuntu/Godseye/manage.py get_trades >> /home/ubuntu/Godseye/logs/get_trades.log 2>&1
+
+cat /home/ubuntu/Godseye/logs/get_trades.log
+
+

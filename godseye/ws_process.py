@@ -73,41 +73,52 @@ def on_open(ws):
 
     threading.Thread(target=heartbeat, daemon=True).start()
 
-    ws.last_subscriptions = set()
-
     def periodic_resubscribe():
         while True:
             try:
                 # Read subscription set from Redis
-                current = r.smembers("md_subscriptions")
+                desired_tokens = set(r.smembers("md_subscriptions"))
 
-                # Convert to sorted list of token pairs
-                tokens = []
-                for item in current:
-                    ex, tk = item.split("_")
-                    tokens.append([int(ex), int(tk)])
+                # Last confirmed subscriptions
+                last_sub_set = set(r.smembers('ws_last_subscriptions'))
 
-                # If there's no change in subscription, skip
-                if current == ws.last_subscriptions:
+                # Pending subscriptions
+                pending_set = set(r.smembers('ws_pending_subscriptions'))
+
+                # Tokens to subscribe: new + pending
+                to_subscribe = desired_tokens - last_sub_set - pending_set
+
+
+                if not to_subscribe:
                     time.sleep(0.5)
                     continue
 
-                # Save new state
-                ws.last_subscriptions = current
+                tokens_list = []
+                for token_str in to_subscribe:
+                    try:
+                        ex, tk = token_str.split("_")
+                        tokens_list.append([int(ex), int(tk)])
+                    except Exception as e:
+                        continue
 
-                # Send subscribe command
-                if tokens:
+                # Convert to sorted list of token pairs
+                if tokens_list:
                     sub_msg = {
                         "a": "subscribe",
-                        "v": tokens,
+                        "v": tokens_list,
                         "m": "marketdata"
                     }
-                    ws.send(json.dumps(sub_msg))
-                    #print("🔁 Updated Subscriptions:", sub_msg)
+                    try:
+                        ws.send(json.dumps(sub_msg))
+                        # Add all to pending until confirmed
+                        if to_subscribe:
+                            r.sadd('ws_pending_subscriptions', *to_subscribe)
+                    except Exception as e:
+                        pass
+                        # print("❌ WS send failed, will retry:", e)
 
             except Exception as e:
                 pass
-                #print("❌ Resubscribe Error:", e)
 
             time.sleep(0.5)
 
@@ -128,6 +139,8 @@ def on_message(ws, message):
     # Store LTP in redis
     key = f"{parsed['exchange_code']}_{parsed['instrument_token']}"
     r.set(key, parsed['ltp'])
+    r.srem("ws_pending_subscriptions", key)
+    r.sadd("ws_last_subscriptions", key)
     #print("📌 Updated LTP:", parsed['ltp'])
 
 
