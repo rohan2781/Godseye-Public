@@ -262,7 +262,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }, i * 400);
     });
     document.querySelectorAll(".pnl-total").forEach(function(el) {
-        let value = parseFloat(el.dataset.value);
+        let value = parseFloat(el.textContent);
+
+        el.classList.remove("pnl-positive", "pnl-negative"); // reset first
+
         if (value > 0) {
             el.classList.add("pnl-positive");
         } else if (value < 0) {
@@ -406,7 +409,10 @@ function updateInstrumentTotals() {
       totalSpan.textContent = sum.toFixed(2);
     }
     document.querySelectorAll(".pnl-total").forEach(function(el) {
-        let value = parseFloat(el.dataset.value);
+        let value = parseFloat(el.textContent);
+
+        el.classList.remove("pnl-positive", "pnl-negative"); // reset first
+
         if (value > 0) {
             el.classList.add("pnl-positive");
         } else if (value < 0) {

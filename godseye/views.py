@@ -69,7 +69,7 @@ def maybe_start_account_jobs(masterclass_dict):
 
     try:
         last_run = r.get("account_jobs_last_run")
-        if last_run and now - float(last_run) < 300:  # every 300 sec
+        if last_run and now - float(last_run) < 60:  # every 300 sec
             return
 
         # distributed lock (multi-worker safe)
@@ -269,9 +269,9 @@ def normalize_order(order, account_key):
             "instrument": order["ExchangeInstrumentID"],
             "symbol":order['TradingSymbol'],
             "side": order["OrderSide"],
-            "price": order["OrderPrice"],
+            "price": order["OrderAverageTradedPrice"],
             "qty": order["OrderQuantity"],
-            "finalPrice": float(float(order["OrderPrice"])*float(order["OrderQuantity"])),
+            "finalPrice": float(float(order["OrderAverageTradedPrice"])*float(order["OrderQuantity"])),
             "expiry":expiry
         }
     else:
