@@ -145,10 +145,10 @@ def get_contracts():
         return contracts['NFO']
             # r.set('nfo', pickle.dumps(contracts['NFO']))
 
-def generate_closed_pnl(account_name):
+def generate_closed_pnl(account_name,symbol):
     trades = (
         TradeBook.objects
-        .filter(accountId=account_name)
+        .filter(accountId=account_name,symbol__istartswith=symbol.upper())
         .order_by('instrument', 'tradeTime')
         .values(
             'instrument',
@@ -169,24 +169,49 @@ def generate_closed_pnl(account_name):
 
         for (instrument), trade_list in grouped_trades.items():
             buy_queue = deque()
+            sell_queue = deque()
 
             for trade in trade_list:
+                qty = trade['qty']
+                price = trade['price']
+
                 if trade['side'] == 'BUY':
-                    buy_queue.append({
-                        'qty': trade['qty'],
-                        'price': trade['price']
-                    })
+
+                    # First match against open sells (short positions)
+                    while qty > 0 and sell_queue:
+                        sell = sell_queue[0]
+
+                        matched_qty = min(qty, sell['qty'])
+
+                        pnl = (sell['price'] - price) * matched_qty  # short pnl logic
+
+                        results.append({
+                            'instrument': instrument,
+                            'pnl': pnl
+                        })
+
+                        sell['qty'] -= matched_qty
+                        qty -= matched_qty
+
+                        if sell['qty'] == 0:
+                            sell_queue.popleft()
+
+                    # Remaining qty becomes open long
+                    if qty > 0:
+                        buy_queue.append({
+                            'qty': qty,
+                            'price': price
+                        })
 
                 elif trade['side'] == 'SELL':
-                    sell_qty = trade['qty']
-                    sell_price = trade['price']
 
-                    while sell_qty > 0 and buy_queue:
+                    # First match against open buys (long positions)
+                    while qty > 0 and buy_queue:
                         buy = buy_queue[0]
 
-                        matched_qty = min(sell_qty, buy['qty'])
+                        matched_qty = min(qty, buy['qty'])
 
-                        pnl = (sell_price - buy['price']) * matched_qty
+                        pnl = (price - buy['price']) * matched_qty  # long pnl logic
 
                         results.append({
                             'instrument': instrument,
@@ -194,10 +219,17 @@ def generate_closed_pnl(account_name):
                         })
 
                         buy['qty'] -= matched_qty
-                        sell_qty -= matched_qty
+                        qty -= matched_qty
 
                         if buy['qty'] == 0:
                             buy_queue.popleft()
+
+                    # Remaining qty becomes open short
+                    if qty > 0:
+                        sell_queue.append({
+                            'qty': qty,
+                            'price': price
+                        })
         final_pnl = defaultdict(float)
         for row in results:
             key_ie = (row['instrument'])
@@ -235,6 +267,7 @@ def normalize_order(order, account_key):
             "tradeTime": datetime.strptime(order["OrderGeneratedDateTime"], "%d-%m-%Y %H:%M:%S"),
             "accountId": account_key,
             "instrument": order["ExchangeInstrumentID"],
+            "symbol":order['TradingSymbol'],
             "side": order["OrderSide"],
             "price": order["OrderPrice"],
             "qty": order["OrderQuantity"],
@@ -252,6 +285,7 @@ def normalize_order(order, account_key):
             "tradeTime": datetime.fromtimestamp(int(order['order_entry_time'])),
             "accountId": account_key,
             "instrument": order["instrument_token"],
+            "symbol":order['trading_symbol'],
             "side": order["order_side"],
             "price": order["average_price"],
             "qty": order["quantity"],
@@ -484,7 +518,12 @@ def placesl(req):
         # if r.get('logged_in')=='1':
         if req.method == 'POST':
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-            maybe_start_account_jobs(masterclass_dict)
+            t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict,),
+                daemon=True
+            )
+            t.start()
             nifty_freeze_qty = get_freeze_quantity_from_nse("NIFTY", debug=True)
             banknifty_freeze_qty = get_freeze_quantity_from_nse("BANKNIFTY", debug=True)
             try:
@@ -642,7 +681,12 @@ def squareoff_strike(req):
         body_data = json.loads(req.POST.get("data"))
         ## print("Body Data ",body_data)
         masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-        maybe_start_account_jobs(masterclass_dict)
+        t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict,),
+                daemon=True
+            )
+        t.start()
         # response=master_connection(req.user)
         # masterclass_dict=response[0]
         # clients=response[1]
@@ -851,7 +895,12 @@ def squareoff(req,id):
         # if req.session.get("logged_in"):
         # if r.get('logged_in')=='1':
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-            maybe_start_account_jobs(masterclass_dict)
+            t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict,),
+                daemon=True
+            )
+            t.start()
             # response=master_connection(req.user)
             # masterclass_dict=response[0]
             # clients=response[1]
@@ -1081,7 +1130,12 @@ def pnl(req):
                 bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
                 bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
                 masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-                maybe_start_account_jobs(masterclass_dict)
+                t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict,),
+                daemon=True
+                )
+                t.start()
                 # response=master_connection(req.user)
                 # masterclass_dict=response[0]
                 # jainam_user_ids=response[2]
@@ -1270,11 +1324,10 @@ def positions(req):
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
-                args=(masterclass_dict),
+                args=(masterclass_dict,),
                 daemon=True
             )
             t.start()
-            # maybe_start_account_jobs(masterclass_dict)
             client_list = []
             arr = []
             xts_positions = {}
@@ -1312,7 +1365,6 @@ def positions(req):
                             "Token",
                             "Exchange",
                             "PNL",
-                            "ClosedPNL",
                             "Quantitys",
                             "Price",
                             "Side",
@@ -1320,6 +1372,9 @@ def positions(req):
                             "PlaceSL"
                         ]
                     )
+                    if not df_position.empty and 'Quantity' in df_position.columns:
+                        qty_numeric = pd.to_numeric(df_position['Quantity'], errors='coerce')
+                        df_position = df_position[qty_numeric != 0]
                     if (not df_position.empty and 'TradingSymbol' in df_position.columns and df_position['TradingSymbol'].astype(str).str.contains(r'\b(SENSEX|NIFTY|BANKNIFTY)\b', case=False, na=False).any()):
                         # print('inside position',key)
                         df_position = df_position[
@@ -1329,23 +1384,23 @@ def positions(req):
                                 na=False
                             )
                         ]
-                        df_tradebook=generate_closed_pnl(key.lower())
+                        # df_tradebook=generate_closed_pnl(key.lower())
                         df_position['ExchangeInstrumentId'] = df_position['ExchangeInstrumentId'].astype(int)
-                        df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
-                        df = pd.merge(
-                            df_position,
-                            df_tradebook,
-                            left_on=['ExchangeInstrumentId'],
-                            right_on=['instrument'],
-                            how='left'
-                        )
-                        df.fillna(0, inplace=True)
+                        # df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
+                        # df = pd.merge(
+                        #     df_position,
+                        #     df_tradebook,
+                        #     left_on=['ExchangeInstrumentId'],
+                        #     right_on=['instrument'],
+                        #     how='left'
+                        # )
+                        df_position.fillna(0, inplace=True)
                         ## print(f"{key} positions: {positions}")
-                        pos_data=df.to_dict(orient='records')
+                        pos_data=df_position.to_dict(orient='records')
                         for pos1 in pos_data:
-                            if int(pos1["Quantity"]) == 0:
-                                xts_positions[key] = data
-                                continue
+                            # if int(pos1["Quantity"]) == 0:
+                            #     xts_positions[key] = data
+                            #     continue
                             pos = {}
                             # ## print(pos1)
                             
@@ -1394,7 +1449,7 @@ def positions(req):
                                 price = pos1['ActualBuyAveragePrice']
                                 side = 'BUY'
                             pos['PNL']=round((float(ltp) - float(price)) * float(quantity) if side == 'BUY' else (float(price) - float(ltp)) * float(quantity),2)
-                            pos['ClosedPNL']=float(pos1['total_pnl'])
+                            # pos['ClosedPNL']=float(pos1['total_pnl'])
                             pos['Quantitys']=quantity
                             pos['Price']=price
                             pos['Side']=side
@@ -1465,7 +1520,6 @@ def positions(req):
                         "Token",
                         "Exchange",
                         "PNL",
-                        "ClosedPNL",
                         "Quantitys",
                         "Price",
                         "Side"
@@ -1474,19 +1528,19 @@ def positions(req):
                 if (not df_position.empty and 'trading_symbol' in df_position.columns and df_position['trading_symbol'].astype(str).str.startswith(('SENSEX', 'NIFTY', 'BANKNIFTY')).any()):
                     # print('inside position',key)
                     df_position = df_position[df_position['trading_symbol'].str.startswith(('SENSEX', 'NIFTY', 'BANKNIFTY'))]
-                    df_tradebook=generate_closed_pnl(key.lower())
+                    # df_tradebook=generate_closed_pnl(key.lower())
                     df_position['instrument_token'] = df_position['instrument_token'].astype(int)
-                    df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
-                    df = pd.merge(
-                        df_position,
-                        df_tradebook,
-                        left_on=['instrument_token'],
-                        right_on=['instrument'],
-                        how='left'
-                    )
-                    df.fillna(0, inplace=True)
+                    # df_tradebook['instrument'] = df_tradebook['instrument'].astype(int)
+                    # df = pd.merge(
+                    #     df_position,
+                    #     df_tradebook,
+                    #     left_on=['instrument_token'],
+                    #     right_on=['instrument'],
+                    #     how='left'
+                    # )
+                    df_position.fillna(0, inplace=True)
                     # client_list.append(key)
-                    for index, row in df.iterrows():
+                    for index, row in df_position.iterrows():
                         instrument = row["symbol"]
                         # try:
                         if instrument=='SENSEX':
@@ -1540,8 +1594,8 @@ def positions(req):
                             side = 'BUY'
 
                         pnl=round((float(ltp) - float(price)) * float(quantity)  if side == 'BUY' else (float(price) - (float(ltp))) * float(quantity),2)
-                        closed_pnl=round(row['total_pnl'],2)
-                        pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, closed_pnl, quantity, price, side]
+                        # closed_pnl=round(row['total_pnl'],2)
+                        pos.loc[len(pos)] = [instrument, expiry, strike, type_, qty, ltp, token, exchange, pnl, quantity, price, side]
 
                     # df['Token'] = df['Token'].apply(str)
                     df = pos.copy()
@@ -1558,18 +1612,6 @@ def positions(req):
                         axis=1
                     )
                     df["rollover_url"] = "https://goddseye.ngrok.io/rollover" + df["Token"]
-                    # df["Squareoff"] = df.apply(
-                    #     lambda row: (
-                    #         '<form method="POST">'
-                    #         + '<button type="submit">'
-                    #         + f'<a href="{row["url"]}" target="_blank">'
-                    #         + "Squareoff"
-                    #         + "</a>"
-                    #         + "</button>"
-                    #         + "</form>"
-                    #     ),
-                    #     axis=1
-                    # )
                     df["Squareoff"] = df.apply(
                         lambda row: (
                             f'<form action="{row["url"]}" method="POST" style="display:inline;">'
@@ -1605,7 +1647,6 @@ def positions(req):
                     df = df.drop(columns=['Quantitys','Side'])
                     # Mark LTP column cell for live update
                     df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
-                    df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
                     df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                     df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
 
@@ -1680,11 +1721,12 @@ def positions(req):
                     df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
 
                     final_rows = []
-                    numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+                    numeric_cols = ['_PNL_NUM']
 
                     for instrument, inst_df in df.groupby('Instrument', sort=False):
                         final_rows.append(inst_df)
-
+                        closed_df=generate_closed_pnl(key.lower(),instrument)
+                        total_closed_pnl = closed_df['total_pnl'].sum()
                         summary = inst_df[numeric_cols].sum()
 
                         summary_row = {col: '' for col in df.columns}
@@ -1695,7 +1737,9 @@ def positions(req):
                             f'{initial_pnl}'
                             f'</span>'
                         )
-                        summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
+                        # summary_row['ClosedPNL'] = 
+                        summary_row['Squareoff'] = f'Closed PNL: {round(total_closed_pnl, 2)}'
+                        summary_row['PlaceSL'] = ''
                         summary_row['SquareOff Strike'] = ''
                         summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
@@ -1705,7 +1749,7 @@ def positions(req):
                         df = pd.concat(final_rows, ignore_index=True)
                     else:
                         df = pd.DataFrame(columns=df.columns)
-                    df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
+                    df = df.drop(columns=['_PNL_NUM'])
 
                     row_attrs = df['__row_attr__'].tolist()  # save separately
                     df = df.drop(columns=['__row_attr__'])
@@ -1725,12 +1769,6 @@ def positions(req):
                             final_html.append(line)
 
                     html = '\n'.join(final_html)                
-                    html = re.sub(
-                        r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
-                        r'<tr class="instrument-total"><td colspan="6">\1</td>',
-                        html,
-                        flags=re.S
-                    )
                 else:
                     # Create empty table structure
                     html = df.to_html(classes="data", escape=False, index=False)
@@ -1769,7 +1807,6 @@ def positions(req):
                     df = df.drop(columns=['Price','Quantitys','Side'])
                     # 2) Mark LTP column cell with class="ltp-value"
                     df['_PNL_NUM'] = pd.to_numeric(df['PNL'], errors='coerce')
-                    df['_CLOSED_PNL_NUM'] = pd.to_numeric(df['ClosedPNL'], errors='coerce')
                     df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                     df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
                     def make_squareoff_form(row):
@@ -1804,11 +1841,12 @@ def positions(req):
                     df=df.drop(columns='Type_order')
 
                     final_rows = []
-                    numeric_cols = ['_PNL_NUM', '_CLOSED_PNL_NUM']
+                    numeric_cols = ['_PNL_NUM']
 
                     for instrument, inst_df in df.groupby('Instrument', sort=False):
                         final_rows.append(inst_df)
-
+                        closed_df=generate_closed_pnl(key.lower(),instrument)
+                        total_closed_pnl = closed_df['total_pnl'].sum()
                         summary = inst_df[numeric_cols].sum()
 
                         summary_row = {col: '' for col in df.columns}
@@ -1819,7 +1857,9 @@ def positions(req):
                             f'{initial_pnl}'
                             f'</span>'
                         )
-                        summary_row['ClosedPNL'] = round(summary['_CLOSED_PNL_NUM'], 2)
+                        # summary_row['ClosedPNL'] = 
+                        summary_row['SquareOff'] = f'Closed PNL: {round(total_closed_pnl, 2)}'
+                        summary_row['PlaceSL'] = ''
                         summary_row['SquareOff Strike'] = ''
                         summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
@@ -1829,7 +1869,7 @@ def positions(req):
                         df = pd.concat(final_rows, ignore_index=True)
                     else:
                         df = pd.DataFrame(columns=df.columns)
-                    df = df.drop(columns=['_PNL_NUM', '_CLOSED_PNL_NUM'])
+                    df = df.drop(columns=['_PNL_NUM'])
 
                     row_attrs = df['__row_attr__'].tolist()
                     df = df.drop(columns=['__row_attr__'])
@@ -1854,12 +1894,6 @@ def positions(req):
                             final_html.append(line)
 
                     html = '\n'.join(final_html)
-                    html = re.sub(
-                        r'<tr class="instrument-total">\s*<td>([^<]+ TOTAL)</td>(?:\s*<td></td>){5}',
-                        r'<tr class="instrument-total"><td colspan="6">\1</td>',
-                        html,
-                        flags=re.S
-                    )
                 else:
                     # Create empty table structure
                     html = df.to_html(classes="data", escape=False, index=False)
@@ -1897,7 +1931,12 @@ def positions(req):
 def home(req):
     try:
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-            maybe_start_account_jobs(masterclass_dict)
+            t = Thread(
+                target=maybe_start_account_jobs,
+                args=(masterclass_dict,),
+                daemon=True
+            )
+            t.start()
             # response=master_connection(req.user)
             # masterclass_dict=response[0]
             # clients=response[1]

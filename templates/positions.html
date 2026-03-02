@@ -405,20 +405,60 @@ function updateInstrumentTotals() {
     if (totalSpan) {
       totalSpan.textContent = sum.toFixed(2);
     }
-  });
-  document.querySelectorAll(".pnl-total").forEach(function(el) {
-        let value = parseFloat(el.textContent) || 0;
-
-        el.classList.remove("pnl-positive", "pnl-negative");
-
+    document.querySelectorAll(".pnl-total").forEach(function(el) {
+        let value = parseFloat(el.dataset.value);
         if (value > 0) {
             el.classList.add("pnl-positive");
         } else if (value < 0) {
             el.classList.add("pnl-negative");
         }
     });
+    
+  });
 }
 
+function formatSummaryRows() {
+    const summaryRows = document.querySelectorAll("tr.instrument-total");
+
+    summaryRows.forEach(row => {
+        const cells = Array.from(row.querySelectorAll("td"));
+        if (cells.length !== 10) return;  // Make sure 10 cells as per your table
+
+        // Extract values BEFORE clearing row
+        const instrumentText = cells[0].textContent.trim();
+        const pnlCell = cells[6].cloneNode(true);  // clone PNL cell with styles
+        const closedValue = cells.slice(7).map(td => td.textContent.trim()).join(" ").replace(/Closed PNL:/gi, "").trim();
+
+        // Clear the row
+        row.innerHTML = "";
+
+        // Merge Instrument → LTP (0 to 5)
+        const leftMerged = document.createElement("td");
+        leftMerged.colSpan = 6;
+        leftMerged.textContent = instrumentText;
+        leftMerged.style.fontWeight = "600";
+        leftMerged.style.textAlign = "center";
+
+        // Merge Squareoff → SquareOff Strike (7 to 9)
+        const rightMerged = document.createElement("td");
+        rightMerged.colSpan = 3;
+        rightMerged.style.textAlign = "centre";
+        rightMerged.style.fontWeight = "600";
+        rightMerged.textContent = "Closed PNL: " + closedValue;
+
+        if (closedValue > 0) {
+            rightMerged.classList.add("pnl-positive");
+        } else if (closedValue < 0) {
+            rightMerged.classList.add("pnl-negative");
+        }
+        // Append cells in order: left merged, pnl, right merged
+        row.appendChild(leftMerged);
+        row.appendChild(pnlCell);
+        row.appendChild(rightMerged);
+    });
+}
+
+formatSummaryRows();
 
 async function updateLTPs() {
       const rows = document.querySelectorAll("tr[data-token]");

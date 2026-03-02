@@ -5,6 +5,7 @@ class TradeBook(models.Model):
     tradeTime = models.DateTimeField()
     accountId = models.TextField()
     instrument = models.TextField()
+    symbol=models.TextField()
     side = models.TextField()
     price = models.DecimalField(max_digits=20, decimal_places=8)
     qty = models.DecimalField(max_digits=20, decimal_places=8)
