@@ -407,7 +407,10 @@ function updateInstrumentTotals() {
     }
   });
   document.querySelectorAll(".pnl-total").forEach(function(el) {
-        let value = parseFloat(el.dataset.value);
+        let value = parseFloat(el.textContent) || 0;
+
+        el.classList.remove("pnl-positive", "pnl-negative");
+
         if (value > 0) {
             el.classList.add("pnl-positive");
         } else if (value < 0) {
