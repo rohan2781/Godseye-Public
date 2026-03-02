@@ -406,6 +406,14 @@ function updateInstrumentTotals() {
       totalSpan.textContent = sum.toFixed(2);
     }
   });
+  document.querySelectorAll(".pnl-total").forEach(function(el) {
+        let value = parseFloat(el.dataset.value);
+        if (value > 0) {
+            el.classList.add("pnl-positive");
+        } else if (value < 0) {
+            el.classList.add("pnl-negative");
+        }
+    });
 }
 
 
