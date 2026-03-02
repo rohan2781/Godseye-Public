@@ -1343,8 +1343,9 @@ def positions(req):
                         ## print(f"{key} positions: {positions}")
                         pos_data=df.to_dict(orient='records')
                         for pos1 in pos_data:
-                            # if int(pos1["Quantity"]) == 0:
-                            #     continue
+                            if int(pos1["Quantity"]) == 0:
+                                xts_positions[key] = data
+                                continue
                             pos = {}
                             # ## print(pos1)
                             
