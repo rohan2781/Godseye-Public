@@ -84,7 +84,7 @@ def _load_accounts():
     # Store serializable info in Redis for other workers
     for key in masterclass_dict:
         try:
-            if 'jainam' not in key.lower():
+            if 'jainam' not in key.lower() and masterclass_dict[key].auth_token is not None:
                 auth_token=masterclass_dict[key].auth_token
                 base_url=masterclass_dict[key].base_url.replace('https://','')
                 ws_url = f"wss://{base_url}/ws/v1/feeds?token={auth_token}"

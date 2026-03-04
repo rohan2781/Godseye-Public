@@ -5,10 +5,32 @@ import redis
 import websocket
 import struct
 import ssl
+import pytz
+from datetime import datetime
+from datetime import time as t
 
 # Redis client
 r = redis.Redis(host="localhost", port=6379, decode_responses=True)
+last_tick_time = time.time()
+IST = pytz.timezone("Asia/Kolkata")
 
+def is_market_open():
+    now_ist = datetime.now(IST).time()  # get current IST time
+    market_open = t(8, 15)
+    market_close = t(14, 30)
+    return market_open <= now_ist <= market_close
+
+def monitor_feed(ws):
+    global last_tick_time
+
+    while True:
+        time.sleep(5)
+
+        # If no tick for 30 seconds → kill connection
+        if is_market_open() and time.time() - last_tick_time > 90:
+            # print("⚠️ No LTP received for 30 seconds. Forcing reconnect...")
+            ws.close()
+            break
 
 # -----------------------------------------
 # Build WS URL (from Redis)
@@ -100,7 +122,7 @@ def on_open(ws):
                         tokens_list.append([int(ex), int(tk)])
                     except Exception as e:
                         continue
-
+                
                 # Convert to sorted list of token pairs
                 if tokens_list:
                     sub_msg = {
@@ -123,11 +145,14 @@ def on_open(ws):
             time.sleep(0.5)
 
     threading.Thread(target=periodic_resubscribe, daemon=True).start()
+    threading.Thread(target=monitor_feed, args=(ws,), daemon=True).start()
 
 def on_message(ws, message):
+    global last_tick_time
     try:
         if isinstance(message, bytes):
             parsed = parse_marketdata_message(message)
+            last_tick_time = time.time()   # ✅ Update heartbeat of feed
             #print(parsed)
         else:
             #print("📝 Text Message:", message)
@@ -145,11 +170,13 @@ def on_message(ws, message):
 
 
 def on_error(ws, error):
-    pass
-    #print("❌ WS Error:", error)
+    # print(error)
+    ws.close()
+    # print("❌ WS Error:", error)
 
 
 def on_close(ws, code, msg):
+    # print('closing')
     pass
     #print("🔴 WS Closed:", code, msg)
 
@@ -161,6 +188,7 @@ def run_forever():
     retry_delay = 3
 
     while True:
+        # print('Retrying')
         ws_url = build_ws_url()
 
         if not ws_url:
