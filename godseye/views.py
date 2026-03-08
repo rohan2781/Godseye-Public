@@ -27,6 +27,7 @@ import platform
 from .models import *
 import requests
 import pickle
+import subprocess
 
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
@@ -34,6 +35,16 @@ r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 instrument_cache={}
 positions_data=[]
 
+
+def restart_ws_service():
+    if platform.system()!='Windows':
+        try:
+            subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
+            time.sleep(2)
+            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
+            r.set('ws_restart',1,25200)
+        except subprocess.CalledProcessError as e:
+            pass
 
 def login_required(view_func):
     @wraps(view_func)
@@ -1930,6 +1941,13 @@ def positions(req):
 @login_required
 def home(req):
     try:
+            if r.get('ws_restart')!=1:
+                t = Thread(
+                    target=restart_ws_service(),
+                    args=(),
+                    daemon=True
+                )
+                t.start()
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
