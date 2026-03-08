@@ -34,5 +34,6 @@ urlpatterns = [
     path('logout',views.logout,name='logout'),
     path('placesl',views.placesl,name='placesl'),
     path('cancelsl',views.cancelsl,name='cancelsl'),
+    path('restart',views.restart_ws_service,name='restart'),
 
 ]

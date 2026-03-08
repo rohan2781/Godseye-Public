@@ -36,15 +36,18 @@ instrument_cache={}
 positions_data=[]
 
 
-def restart_ws_service():
-    if platform.system()!='Windows':
-        try:
-            subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
-            time.sleep(2)
-            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
-            r.set('ws_restart',1,25200)
-        except subprocess.CalledProcessError as e:
-            pass
+def restart_ws_service(req):
+    if req.method == "POST":
+        if platform.system()!='Windows':
+            try:
+                subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
+                time.sleep(2)
+                subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
+                r.set('ws_restart',1,25200)
+            except subprocess.CalledProcessError as e:
+                pass
+    return JsonResponse({"status": "success"})
+
 
 def login_required(view_func):
     @wraps(view_func)
@@ -1943,8 +1946,8 @@ def home(req):
     try:
             if r.get('ws_restart')!=1:
                 t = Thread(
-                    target=restart_ws_service(),
-                    args=(),
+                    target=restart_ws_service,
+                    args=(req,),
                     daemon=True
                 )
                 t.start()
