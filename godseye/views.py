@@ -37,15 +37,14 @@ positions_data=[]
 
 
 def restart_ws_service(req):
-    if req.method == "POST":
-        if platform.system()!='Windows':
-            try:
-                subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
-                time.sleep(2)
-                subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
-                r.set('ws_restart',1,25200)
-            except subprocess.CalledProcessError as e:
-                pass
+    if platform.system()!='Windows':
+        try:
+            subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
+            time.sleep(2)
+            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
+            r.set('ws_restart',1,25200)
+        except subprocess.CalledProcessError as e:
+            pass
     return JsonResponse({"status": "success"})
 
 
