@@ -22,7 +22,7 @@ git status
 git stash
 git pull origin main
 git stash pop
-gittoken-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
+gittoken-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
 
 sudo systemctl status redis
 redis-cli FLUSHALL
@@ -30,6 +30,8 @@ redis-cli FLUSHALL
 sudo nano /etc/systemd/system/ws.service
 sudo systemctl daemon-reload
 sudo systemctl restart ws.service
+sudo systemctl stop ws.service
+sudo systemctl start ws.service
 sudo systemctl enable ws.service
 sudo systemctl status ws.service
 sudo journalctl -u ws.service -f
