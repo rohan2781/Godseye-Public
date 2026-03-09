@@ -302,9 +302,8 @@
       </div>
       <h3 class="trade-header">Multi-Leg Order Setup</h3>
       <div class="header-right">
-        <form method="POST" action="{% url 'restart' %}">
-          {% csrf_token %}
-          <button type="submit" class="btn-header">Logout</button>
+        <form method="" action="{% url 'restart' %}">
+          <button type="submit" class="btn-header">Restart LTP</button>
         </form>
         <form method="POST" action="{% url 'logout' %}">
           {% csrf_token %}

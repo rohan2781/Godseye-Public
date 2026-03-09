@@ -36,7 +36,7 @@ instrument_cache={}
 positions_data=[]
 
 
-def restart_ws_service():
+def restart_ws_service(req):
     if platform.system()!='Windows':
         try:
             subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
@@ -2250,7 +2250,7 @@ def login(req):
         else:
             messages.info(req,'Invalid Credentials')
     if not r.exists("ws_restart"):
-        restart_ws_service()
+        restart_ws_service(req)
     return render(req,'login.html')
 
 @login_required
