@@ -36,19 +36,20 @@ instrument_cache={}
 positions_data=[]
 
 
-def restart_ws_service(req):
+def restart_ws_service():
     if platform.system()!='Windows':
         try:
             subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
             time.sleep(2)
             subprocess.run(["redis-cli", "FLUSHALL"], check=True)
+            r.set(name='ws_restart',value='1',ex=25200)
             return redirect('logout')
             # subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
             # r.set('ws_restart',1,25200)
         except subprocess.CalledProcessError as e:
             pass
-    return JsonResponse({"status": "success"})
-
+    messages.info('Error restarting websocket')
+    return redirect('login')
 
 def login_required(view_func):
     @wraps(view_func)
@@ -2248,6 +2249,8 @@ def login(req):
 
         else:
             messages.info(req,'Invalid Credentials')
+    if not r.exists("ws_restart"):
+        restart_ws_service()
     return render(req,'login.html')
 
 @login_required

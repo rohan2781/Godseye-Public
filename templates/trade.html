@@ -302,9 +302,9 @@
       </div>
       <h3 class="trade-header">Multi-Leg Order Setup</h3>
       <div class="header-right">
-        <form id="restartWsForm">
+        <form method="POST" action="{% url 'restart' %}">
           {% csrf_token %}
-          <button type="submit" class="btn-header">Restart Websocket</button>
+          <button type="submit" class="btn-header">Logout</button>
         </form>
         <form method="POST" action="{% url 'logout' %}">
           {% csrf_token %}
@@ -356,29 +356,6 @@
   </div>
 
   <script>
-
-    document.getElementById("restartWsForm").addEventListener("submit", function(e){
-      e.preventDefault();
-
-        fetch("{% url 'restart' %}", {
-            method: "POST",
-            headers: {
-                "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value,
-                "Content-Type": "application/json"
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.status === "success"){
-                showSnackbar("Websocket restarted", "success");
-            }else{
-                showSnackbar("Restart failed", "error");
-            }
-        })
-        .catch(error => {
-            showSnackbar("Server error", "error");
-        });
-    });
     
     const LOT_SIZES = {
       NIFTY: 65,
