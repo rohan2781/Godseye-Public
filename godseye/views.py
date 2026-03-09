@@ -41,8 +41,10 @@ def restart_ws_service(req):
         try:
             subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
             time.sleep(2)
-            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
-            r.set('ws_restart',1,25200)
+            subprocess.run(["redis-cli", "FLUSHALL"], check=True)
+            return redirect('logout')
+            # subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
+            # r.set('ws_restart',1,25200)
         except subprocess.CalledProcessError as e:
             pass
     return JsonResponse({"status": "success"})
@@ -1943,13 +1945,14 @@ def positions(req):
 @login_required
 def home(req):
     try:
-            if r.get('ws_restart')!=1:
-                t = Thread(
-                    target=restart_ws_service,
-                    args=(req,),
-                    daemon=True
-                )
-                t.start()
+            # if r.get('ws_restart')!=1:
+            #     t = Thread(
+            #         target=restart_ws_service,
+            #         args=(req,),
+            #         daemon=True
+            #     )
+            #     t.start()
+            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
