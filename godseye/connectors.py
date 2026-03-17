@@ -41,7 +41,7 @@ def master_connection(user):
     jainam_user_ids={}
     accounts_global=[]
 
-    accounts = Accounts.objects.filter(users__contains=user)
+    accounts = Accounts.objects.filter(users__contains=user,enabled__iexact='yes')
     for account in accounts:
         masterclass_dict[account.name]=pickle.loads(account.master_class_instance_data)
         accounts_global.append(account.name)

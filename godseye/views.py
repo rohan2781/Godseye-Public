@@ -48,7 +48,7 @@ def restart_ws_service(req):
             # r.set('ws_restart',1,25200)
         except subprocess.CalledProcessError as e:
             pass
-    messages.info('Error restarting websocket')
+    messages.info(req,'Error restarting websocket')
     return redirect('login')
 
 def login_required(view_func):
@@ -572,10 +572,10 @@ def placesl(req):
             exchange = data[2]
             token, account_holder = token_and_name.split('_', 1)
             price=float(data[3])
-            for key in masterclass_dict:
-                if "jainam" not in key.lower():
-                    all_contracts=get_contracts()
-                    break
+            # for key in masterclass_dict:
+            #     if "jainam" not in key.lower():
+            all_contracts=get_contracts()
+                    # break
             instrument=None
             if re.search(r'B.*F.*O',exchange):
                 instrument='SENSEX'
@@ -739,17 +739,17 @@ def squareoff_strike(req):
         # quantity=data[2]
         # exchange=data[3]
         for id in body_data:
-            data = id.rsplit('_', 2)
+            data = id.rsplit('_', 3)
             token_and_name = data[0]
             quantity = data[1]
             exchange = data[2]
             # now split token from name (first underscore only)
             token, account_holder = token_and_name.split('_', 1)
-            for key in masterclass_dict:
-                if "jainam" not in key.lower():
+            # for key in masterclass_dict:
+            #     if "jainam" not in key.lower():
                     # all_contracts=masterclass_dict[key].allcontracts
-                    all_contracts=get_contracts()
-                    break
+            all_contracts=get_contracts()
+                    # break
             instrument=None
             if re.search(r'B.*F.*O',exchange):
                 instrument='SENSEX'
@@ -952,16 +952,16 @@ def squareoff(req,id):
             # account_holder=data[1]
             # quantity=data[2]
             # exchange=data[3]
-            data = id.rsplit('_', 2)
+            data = id.rsplit('_', 3)
             token_and_name = data[0]
             quantity = data[1]
             exchange = data[2]
             # now split token from name (first underscore only)
             token, account_holder = token_and_name.split('_', 1)
-            for key in masterclass_dict:
-                if "jainam" not in key.lower():
-                    all_contracts=get_contracts()
-                    break
+            # for key in masterclass_dict:
+            #     if "jainam" not in key.lower():
+            all_contracts=get_contracts()
+                    # break
             instrument=None
             if re.search(r'B.*F.*O',exchange):
                 instrument='SENSEX'
@@ -1953,7 +1953,8 @@ def home(req):
             #         daemon=True
             #     )
             #     t.start()
-            subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
+            if platform.system()!='Windows':
+                subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
             masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,

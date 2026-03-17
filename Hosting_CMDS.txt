@@ -1,7 +1,8 @@
 ayusshmittaal
 
 chaitanyapadachhoffers@gmail.com
-ALgo@123
+Quant@123123
+old-ALgo@123
 
 
 ssh -i "C:\Users\Rohan\Downloads\godseye.pem" ubuntu@43.204.15.204
@@ -61,3 +62,9 @@ add this below line in the editor:
 cat /home/ubuntu/Godseye/logs/get_trades.log
 
 
+check sizes
+df -h
+uptime
+free -h
+top
+htop
