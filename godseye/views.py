@@ -739,7 +739,10 @@ def squareoff_strike(req):
         # quantity=data[2]
         # exchange=data[3]
         for id in body_data:
-            data = id.rsplit('_', 3)
+            if 'jainam' in id.lower():
+                data = id.rsplit('_', 3)
+            else:
+                data = id.rsplit('_', 2)
             token_and_name = data[0]
             quantity = data[1]
             exchange = data[2]
@@ -952,7 +955,10 @@ def squareoff(req,id):
             # account_holder=data[1]
             # quantity=data[2]
             # exchange=data[3]
-            data = id.rsplit('_', 3)
+            if 'jainam' in id.lower():
+                data = id.rsplit('_', 3)
+            else:
+                data = id.rsplit('_', 2)
             token_and_name = data[0]
             quantity = data[1]
             exchange = data[2]
