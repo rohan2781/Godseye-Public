@@ -42,6 +42,7 @@ def restart_ws_service(req):
             subprocess.run(["sudo", "systemctl", "stop", "ws.service"], check=True)
             time.sleep(2)
             subprocess.run(["redis-cli", "FLUSHALL"], check=True)
+            subprocess.run(["sudo", "systemctl", "restart", "redis"], check=True)
             r.set(name='ws_restart',value='1',ex=25200)
             return redirect('logout')
             # subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
