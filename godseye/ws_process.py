@@ -25,7 +25,6 @@ def monitor_feed(ws):
 
     while True:
         time.sleep(5)
-
         # If no tick for 30 seconds → kill connection
         if is_market_open() and time.time() - last_tick_time > 90:
             # print("⚠️ No LTP received for 30 seconds. Forcing reconnect...")
@@ -91,7 +90,7 @@ def on_open(ws):
                 ws.send(json.dumps({"a": "h", "v": [], "m": ""}))
             except:
                 break
-            time.sleep(10)
+            time.sleep(7)
 
     threading.Thread(target=heartbeat, daemon=True).start()
 

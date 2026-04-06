@@ -26,6 +26,11 @@ git stash pop
 gittoken-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
 
 sudo systemctl status redis
+redis-cli CONFIG SET save ""
+redis-cli CONFIG SET save "3600 1 300 100 60 10000"
+sudo rm /var/lib/redis/dump.rdb
+sudo systemctl restart redis
+
 redis-cli FLUSHALL
 
 sudo nano /etc/systemd/system/ws.service
