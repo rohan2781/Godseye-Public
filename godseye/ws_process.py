@@ -90,7 +90,7 @@ def on_open(ws):
                 ws.send(json.dumps({"a": "h", "v": [], "m": ""}))
             except:
                 break
-            time.sleep(7)
+            time.sleep(10)
 
     threading.Thread(target=heartbeat, daemon=True).start()
 
