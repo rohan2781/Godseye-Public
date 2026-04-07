@@ -22,12 +22,12 @@ def is_market_open():
 
 def monitor_feed(ws):
     global last_tick_time
-
     while True:
         time.sleep(5)
         # If no tick for 30 seconds → kill connection
         if is_market_open() and time.time() - last_tick_time > 90:
-            # print("⚠️ No LTP received for 30 seconds. Forcing reconnect...")
+            r.delete("ws_pending_subscriptions")
+            r.delete("ws_last_subscriptions")
             ws.close()
             break
 
@@ -41,40 +41,56 @@ def build_ws_url():
 # -----------------------------------------
 # Market Data Parser
 # -----------------------------------------
-def parse_marketdata_message(message):
-    """Parse binary message from marketdata feed."""
-    # Skip first byte (mode) – already known
-    mode = message[0]
+# def parse_marketdata_message(message):
+#     """Parse binary message from marketdata feed."""
+#     # Skip first byte (mode) – already known
+#     mode = message[0]
 
-    if len(message) < 58:
-        #print("⚠️ Message too short")
-        return
+#     if len(message) < 58:
+#         #print("⚠️ Message too short")
+#         return
 
-    # Extract fields as per spec
-    data = struct.unpack(">B B I I I I I I I I Q Q I I I I I I I I I I I I", message[:98])
+#     # Extract fields as per spec
+#     data = struct.unpack(">B B I I I I I I I I Q Q I I I I I I I I I I I I", message[:98])
 
-    parsed = {
-        "exchange_code": data[1],
-        "instrument_token": data[2],
-        "ltp": data[3] / 100,
-        "last_traded_time": data[4],
-        "last_quantity": data[5],
-        "trade_volume": data[6],
-        "bid_price": data[7] / 100,
-        "bid_quantity": data[8],
-        "ask_price": data[9] / 100,
-        "ask_quantity": data[10],
-        "total_buy_qty": data[11],
-        "total_sell_qty": data[12],
-        "average_trade_price": data[13] / 100,
-        "exchange_timestamp": data[14],
-        "open_price": data[15] / 100,
-        "high_price": data[16] / 100,
-        "low_price": data[17] / 100,
-        "close_price": data[18] / 100
-    }
-    return parsed
+#     parsed = {
+#         "exchange_code": data[1],
+#         "instrument_token": data[2],
+#         "ltp": data[3] / 100,
+#         "last_traded_time": data[4],
+#         "last_quantity": data[5],
+#         "trade_volume": data[6],
+#         "bid_price": data[7] / 100,
+#         "bid_quantity": data[8],
+#         "ask_price": data[9] / 100,
+#         "ask_quantity": data[10],
+#         "total_buy_qty": data[11],
+#         "total_sell_qty": data[12],
+#         "average_trade_price": data[13] / 100,
+#         "exchange_timestamp": data[14],
+#         "open_price": data[15] / 100,
+#         "high_price": data[16] / 100,
+#         "low_price": data[17] / 100,
+#         "close_price": data[18] / 100
+#     }
+#     print('receiving messages')
+#     return parsed
+def parse_compact_message(message: bytes):
+    """Parse compact_marketdata message (only LTP)"""
+    try:
+        if len(message) < 10:  # must have at least 10 bytes: 1+4+4+1 padding
+            return None
 
+        # Skip first byte if mode exists (like in your old feed)
+        exchange, token, ltp = struct.unpack(">B I I", message[1:10])
+        # print(exchange,token,ltp)
+        return {
+            "exchange_code": exchange,
+            "instrument_token": token,
+            "ltp": ltp / 100  # scale to float
+        }
+    except Exception as e:
+        return None
 # -----------------------------------------
 # WebSocket Event Handlers
 # -----------------------------------------
@@ -107,8 +123,7 @@ def on_open(ws):
                 pending_set = set(r.smembers('ws_pending_subscriptions'))
 
                 # Tokens to subscribe: new + pending
-                to_subscribe = desired_tokens - last_sub_set - pending_set
-
+                to_subscribe = desired_tokens - last_sub_set
 
                 if not to_subscribe:
                     time.sleep(0.5)
@@ -127,7 +142,7 @@ def on_open(ws):
                     sub_msg = {
                         "a": "subscribe",
                         "v": tokens_list,
-                        "m": "marketdata"
+                        "m": "compact_marketdata"
                     }
                     try:
                         ws.send(json.dumps(sub_msg))
@@ -140,33 +155,55 @@ def on_open(ws):
 
             except Exception as e:
                 pass
+                # print(e)
 
             time.sleep(0.5)
 
     threading.Thread(target=periodic_resubscribe, daemon=True).start()
     threading.Thread(target=monitor_feed, args=(ws,), daemon=True).start()
 
+# def on_message(ws, message):
+#     global last_tick_time
+#     try:
+#         if isinstance(message, bytes):
+#             parsed = parse_marketdata_message(message)
+#             last_tick_time = time.time()   # ✅ Update heartbeat of feed
+#             #print(parsed)
+#         else:
+#             #print("📝 Text Message:", message)
+#             return
+#     except Exception as e:
+#         #print("❌ Parsing Error:", e)
+#         return
+
+#     # Store LTP in redis
+#     key = f"{parsed['exchange_code']}_{parsed['instrument_token']}"
+#     r.set(key, parsed['ltp'])
+#     r.srem("ws_pending_subscriptions", key)
+#     r.sadd("ws_last_subscriptions", key)
+#     #print("📌 Updated LTP:", parsed['ltp'])
+
 def on_message(ws, message):
     global last_tick_time
-    try:
-        if isinstance(message, bytes):
-            parsed = parse_marketdata_message(message)
-            last_tick_time = time.time()   # ✅ Update heartbeat of feed
-            #print(parsed)
-        else:
-            #print("📝 Text Message:", message)
-            return
-    except Exception as e:
-        #print("❌ Parsing Error:", e)
+
+    if not isinstance(message, bytes):
         return
 
-    # Store LTP in redis
-    key = f"{parsed['exchange_code']}_{parsed['instrument_token']}"
-    r.set(key, parsed['ltp'])
-    r.srem("ws_pending_subscriptions", key)
-    r.sadd("ws_last_subscriptions", key)
-    #print("📌 Updated LTP:", parsed['ltp'])
+    parsed = parse_compact_message(message)
+    if not parsed:
+        return
 
+    last_tick_time = time.time()
+
+    key = f"{parsed['exchange_code']}_{parsed['instrument_token']}"
+
+    try:
+        r.set(key, parsed['ltp'])
+        r.srem("ws_pending_subscriptions", key)
+        r.sadd("ws_last_subscriptions", key)
+    except Exception as e:
+        pass
+        # print("Redis error:", e)
 
 def on_error(ws, error):
     # print(error)
