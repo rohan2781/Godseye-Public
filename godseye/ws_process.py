@@ -12,6 +12,7 @@ from datetime import time as t
 # Redis client
 r = redis.Redis(host="localhost", port=6379, decode_responses=True)
 last_tick_time = time.time()
+all_subscribe_tick=time.time()
 IST = pytz.timezone("Asia/Kolkata")
 
 def is_market_open():
@@ -122,8 +123,14 @@ def on_open(ws):
                 # Pending subscriptions
                 pending_set = set(r.smembers('ws_pending_subscriptions'))
 
-                # Tokens to subscribe: new + pending
-                to_subscribe = desired_tokens - last_sub_set
+                if time.time() - all_subscribe_tick>90:
+                    try:
+                        r.delete("ws_last_subscriptions")
+                    except:
+                        pass
+                    to_subscribe=desired_tokens
+                else:
+                    to_subscribe = desired_tokens - last_sub_set
 
                 if not to_subscribe:
                     time.sleep(0.5)
