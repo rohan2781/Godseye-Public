@@ -73,3 +73,6 @@ uptime
 free -h
 top
 htop
+
+
+redis-cli monitor

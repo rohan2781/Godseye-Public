@@ -811,6 +811,9 @@ def squareoff_strike(req):
                 ltp+=7
             else:
                 ltp-=7
+            if ltp > 1300:
+                messages.info(req,"Error! Price TOO HIGH Few SquareOffs Failed")
+                continue
             quantity=abs(int(quantity))
             match instrument:
                 case 'BANKNIFTY':
@@ -1026,6 +1029,9 @@ def squareoff(req,id):
                 ltp+=7
             else:
                 ltp-=7
+            if ltp > 1300:
+                messages.info(req,"Error! Price TOO HIGH")
+                return redirect('/positions')
             quantity=abs(int(quantity))
             match instrument:
                 case 'BANKNIFTY':
