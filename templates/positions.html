@@ -469,7 +469,7 @@ function formatSummaryRows() {
         // ======================
         const closedMerged = document.createElement("td");
         closedMerged.colSpan = 2;
-        closedMerged.textContent = closedPnlValue;
+        closedMerged.textContent = 'Closed PNL: '+closedPnlValue;
         closedMerged.style.fontWeight = "600";
         closedMerged.style.textAlign = "center";
         closedMerged.classList.add("closed-pnl");
@@ -487,7 +487,7 @@ function formatSummaryRows() {
         // ======================
         const overallMerged = document.createElement("td");
         overallMerged.colSpan = 2;
-        overallMerged.textContent = overallPnlValue;
+        overallMerged.textContent = 'Overall PNL: ' + overallPnlValue;
         overallMerged.style.fontWeight = "600";
         overallMerged.style.textAlign = "center";
         overallMerged.classList.add("overall-pnl");
