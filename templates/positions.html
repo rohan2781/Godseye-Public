@@ -417,7 +417,7 @@ function updateInstrumentTotals() {
     const overallValue = sum + closedValue;
     const overallSpan = totalRow.querySelector(".overall-pnl");
     if (overallSpan) {
-        overallSpan.textContent = overallValue.toFixed(2);
+        overallSpan.textContent = 'Overall PNL: ' + overallValue.toFixed(2);
 
         overallSpan.classList.remove("pnl-positive", "pnl-negative");
 
@@ -469,7 +469,7 @@ function formatSummaryRows() {
         // ======================
         const closedMerged = document.createElement("td");
         closedMerged.colSpan = 2;
-        closedMerged.textContent = 'Closed PNL: '+closedPnlValue;
+        closedMerged.textContent = closedPnlValue;
         closedMerged.style.fontWeight = "600";
         closedMerged.style.textAlign = "center";
         closedMerged.classList.add("closed-pnl");
@@ -487,7 +487,7 @@ function formatSummaryRows() {
         // ======================
         const overallMerged = document.createElement("td");
         overallMerged.colSpan = 2;
-        overallMerged.textContent = 'Overall PNL: ' + overallPnlValue;
+        overallMerged.textContent = overallPnlValue;
         overallMerged.style.fontWeight = "600";
         overallMerged.style.textAlign = "center";
         overallMerged.classList.add("overall-pnl");
