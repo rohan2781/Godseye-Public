@@ -332,24 +332,47 @@ def fetch_and_insert_orders(account_key, client):
         if orders.empty:
             return
 
-        # # 2️⃣ Fetch existing orderIds ONCE
-        existing_ids = set(
-            TradeBook.objects.values_list("orderId", flat=True)
-        )
+        # 2️⃣ Normalize all rows first
+        normalized_orders = []
 
-        # 3️⃣ Prepare rows
-        new_rows = []
-        # print(account_key)
         for _, order in orders.iterrows():
             normalized = normalize_order(order, account_key.lower())
-            if normalized["orderId"] not in existing_ids:
-                new_rows.append(TradeBook(**normalized))
 
-        # 4️⃣ Bulk insert
+            # IMPORTANT: normalize orderId type
+            normalized["orderId"] = str(normalized["orderId"]).strip()
+
+            normalized_orders.append(normalized)
+
+        # 3️⃣ Remove duplicates from CURRENT API response
+        unique_orders = {}
+        for order in normalized_orders:
+            unique_orders[order["orderId"]] = order
+
+        unique_order_ids = set(unique_orders.keys())
+
+        # 4️⃣ Fetch only relevant existing IDs from DB
+        existing_ids = set(
+            TradeBook.objects.filter(
+                orderId__in=unique_order_ids
+            ).values_list("orderId", flat=True)
+        )
+
+        # Normalize DB ids too
+        existing_ids = {str(x).strip() for x in existing_ids}
+
+        # 5️⃣ Prepare rows that don't exist
+        new_rows = []
+
+        for order_id, order_data in unique_orders.items():
+            if order_id not in existing_ids:
+                new_rows.append(TradeBook(**order_data))
+
+        # 6️⃣ Bulk insert
         if new_rows:
             TradeBook.objects.bulk_create(
                 new_rows,
-                ignore_conflicts=True
+                ignore_conflicts=True,
+                batch_size=1000
             )
     except:
         pass
@@ -691,7 +714,7 @@ def placesl(req):
         return JsonResponse({'success': False, 'message':'Error Occured'})                
 
 @login_required        
-def squareoff_strike(req):
+def squareoff_group(req):
     try:
     # if req.session.get("logged_in"):
         strike = req.POST.get("strike")
@@ -1363,6 +1386,7 @@ def positions(req):
             threads = []
             master_dfs={}
             grouped = defaultdict(list)
+            grouped_instrument = defaultdict(list)
             for key in masterclass_dict:  
                 # print(key)  
                 # client_list.append(key)
@@ -1483,7 +1507,17 @@ def positions(req):
                             pos['Price']=price
                             pos['Side']=side
                             squareoff_id = f"{pos1['ExchangeInstrumentId']}_{key}_{pos1['Quantity']}_{pos1['ExchangeSegment']}_{price}"
-                            grouped[str(pos["Strike"])].append(squareoff_id)
+                            group_key = (
+                                str(pos["Strike"]),
+                                str(pos["Type"]),
+                                str(pos["Expiry"])
+                            )
+                            grouped[group_key].append(squareoff_id)
+                            group_key = (
+                                str(pos["Instrument"]),
+                                str(key)
+                            )
+                            grouped_instrument[group_key].append(squareoff_id)
                             url = reverse('squareoff', kwargs={'id': squareoff_id})
                             pos["SquareOff"] = (
                                 f'<form action="{url}" method="POST" style="display:inline;">'
@@ -1650,18 +1684,39 @@ def positions(req):
                         ),
                         axis=1
                     )
+                    df["Strike"] = df["Strike"].astype(str)
+                    df["Type"] = df["Type"].astype(str)
+                    df["Expiry"] = df["Expiry"].astype(str)
+
                     new_grouped = (
-                        df.groupby("Strike")
+                        df.groupby(["Strike", "Type", "Expiry"])
+                        .apply(lambda g: [
+                            f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
+                            for row in g.itertuples(index=False)
+                    ])
+                    .to_dict()
+                    )
+                    for group_key, items in new_grouped.items():
+                        if group_key in grouped:
+                            grouped[group_key].extend(items)
+                        else:
+                            grouped[group_key] = items
+
+                    df["Instrument"] = df["Instrument"].astype(str)
+                    new_grouped = (
+                        df.groupby(["Instrument"])
                         .apply(lambda g: [
                             f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
                             for row in g.itertuples(index=False)
                         ])
                         .to_dict()
                     )
-
-                    for strike, items in new_grouped.items():
-                        grouped[strike].extend(items)
-
+                    for instrument, items in new_grouped.items():
+                        group_key = (str(instrument), str(key))
+                        if group_key in grouped_instrument:
+                            grouped_instrument[group_key].extend(items)
+                        else:
+                            grouped_instrument[group_key] = items
                     df = df.drop(["url","rollover_url"], axis=1)
 
                     df['__row_attr__'] = (
@@ -1727,14 +1782,17 @@ def positions(req):
                     master_dfs[key]=pos
             ## print('Group ',grouped)
             # print('MasterTrust',master_dfs.keys())
-            url_strike=reverse('squareoff_strike')
+            url_strike=reverse('squareoff_group')
             for key in master_dfs:
                 df = master_dfs[key].copy()
                 if not df.empty:
                     def make_squareoff_form(row):
-                        strike = row.Strike
-                        if strike in grouped:
-                            body_json = json.dumps(grouped[strike])
+                        strike = str(row.Strike)
+                        op_type = str(row.Type)
+                        expiry = str(row.Expiry)
+                        group_key = (strike, op_type, expiry)
+                        if group_key in grouped:
+                            body_json = json.dumps(grouped[group_key])
                             return (
                                 f'<form action="{url_strike}" method="POST" style="display:inline;">'
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
@@ -1745,10 +1803,28 @@ def positions(req):
                             )
                         return ""
                     df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+                    def make_squareoff_form_instrument(row,key):
+                        instrument = str(row.Instrument)
+                        key = str(key)
+                        group_key = (instrument, key)
+                        if group_key in grouped_instrument:
+                            body_json = json.dumps(grouped_instrument[group_key])
+                            return (
+                                f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                                f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                                f'<input type="hidden" name="strike" value="{strike}"/>'
+                                f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                                '<button type="submit" class="squareoff-btn">Sq Off Curr Acc</button>'
+                                '</form>'
+                            )
+                        return ""
+                    df["SquareOff Curr Acct"] = df.apply(
+                        lambda row: make_squareoff_form_instrument(row, key),
+                        axis=1
+                    )
                     sort_order = {'CE': 1, 'PE': 0}  # custom sort order for Type
                     df['Type_order'] = df['Type'].map(sort_order)
                     df = df.sort_values(by=['Instrument','Type_order','Expiry','Strike']).drop(columns='Type_order')
-
                     final_rows = []
                     numeric_cols = ['_PNL_NUM']
 
@@ -1761,17 +1837,26 @@ def positions(req):
                         summary_row = {col: '' for col in df.columns}
                         summary_row['Instrument'] = f'{instrument} TOTAL'
                         initial_pnl = round(summary['_PNL_NUM'], 2)
+                        overall_pnl = round(float(initial_pnl) + float(total_closed_pnl), 2)
                         summary_row['PNL'] = (
                             f'<span class="pnl-total" data-value="{initial_pnl}">'
                             f'{initial_pnl}'
                             f'</span>'
                         )
                         # summary_row['ClosedPNL'] = 
-                        summary_row['Squareoff'] = f'Closed PNL: {round(total_closed_pnl, 2)}'
+                        summary_row['Squareoff'] = (
+                            f'<div class="closed-pnl" style="text-align:center;">'
+                            f'Closed PNL: {round(total_closed_pnl, 2)}'
+                            f'</div>'
+                        )
                         summary_row['PlaceSL'] = ''
-                        summary_row['SquareOff Strike'] = ''
+                        summary_row['SquareOff Strike'] = (
+                            f'<div class="overall-pnl" style="text-align:center;">'
+                            f'Overall PNL: {overall_pnl}'
+                            f'</div>'
+                        )
+                        summary_row["SquareOff Curr Acct"] = ''
                         summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
-
                         final_rows.append(pd.DataFrame([summary_row]))
 
                     if final_rows:
@@ -1839,9 +1924,12 @@ def positions(req):
                     df['LTP'] = '<span class="ltp-value">' + df['LTP'].astype(str) + '</span>'
                     df['PNL']='<span class="pnl-value">' + df['PNL'].astype(str) + '</span>'
                     def make_squareoff_form(row):
-                        strike = row.Strike
-                        if strike in grouped:
-                            body_json = json.dumps(grouped[strike])
+                        strike = str(row.Strike)
+                        op_type = str(row.Type)
+                        expiry = str(row.Expiry)
+                        group_key = (strike, op_type, expiry)
+                        if group_key in grouped:
+                            body_json = json.dumps(grouped[group_key])
                             return (
                                 f'<form action="{url_strike}" method="POST" style="display:inline;">'
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
@@ -1852,6 +1940,25 @@ def positions(req):
                             )
                         return ""
                     df["SquareOff Strike"] = df.apply(make_squareoff_form, axis=1)
+                    def make_squareoff_form_instrument(row,key):
+                        instrument = str(row.Instrument)
+                        key = str(key)
+                        group_key = (instrument, key)
+                        if group_key in grouped_instrument:
+                            body_json = json.dumps(grouped_instrument[group_key])
+                            return (
+                                f'<form action="{url_strike}" method="POST" style="display:inline;">'
+                                f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
+                                f'<input type="hidden" name="strike" value="{strike}"/>'
+                                f'<input type="hidden" name="data" value=\'{body_json}\'/>'
+                                '<button type="submit" class="squareoff-btn">Sq Off Curr Acc</button>'
+                                '</form>'
+                            )
+                        return ""
+                    df["SquareOff Curr Acct"] = df.apply(
+                        lambda row: make_squareoff_form_instrument(row, key),
+                        axis=1
+                    )
                     for index, row in df.iterrows():
                         exchange = row['Exchange']  # or whatever column holds the key
                         token = row['Token']
@@ -1881,15 +1988,25 @@ def positions(req):
                         summary_row = {col: '' for col in df.columns}
                         summary_row['Instrument'] = f'{instrument} TOTAL'
                         initial_pnl = round(summary['_PNL_NUM'], 2)
+                        overall_pnl = round(float(initial_pnl) + float(total_closed_pnl), 2)
                         summary_row['PNL'] = (
                             f'<span class="pnl-total" data-value="{initial_pnl}">'
                             f'{initial_pnl}'
                             f'</span>'
                         )
                         # summary_row['ClosedPNL'] = 
-                        summary_row['SquareOff'] = f'Closed PNL: {round(total_closed_pnl, 2)}'
+                        summary_row['Squareoff'] = (
+                            f'<div class="closed-pnl" style="text-align:center;">'
+                            f'Closed PNL: {round(total_closed_pnl, 2)}'
+                            f'</div>'
+                        )
                         summary_row['PlaceSL'] = ''
-                        summary_row['SquareOff Strike'] = ''
+                        summary_row['SquareOff Strike'] = (
+                            f'<div class="overall-pnl" style="text-align:center;">'
+                            f'Overall PNL: {overall_pnl}'
+                            f'</div>'
+                        )
+                        summary_row["SquareOff Curr Acct"] = ''
                         summary_row['__row_attr__'] = (f'class="instrument-total" data-instrument="{instrument}" data-account="{key}"')
 
                         final_rows.append(pd.DataFrame([summary_row]))

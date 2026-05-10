@@ -10,7 +10,7 @@ class TradeBook(models.Model):
     price = models.DecimalField(max_digits=20, decimal_places=8)
     qty = models.DecimalField(max_digits=20, decimal_places=8)
     finalPrice = models.DecimalField(max_digits=20, decimal_places=8)
-    orderId=models.TextField()
+    orderId = models.CharField(max_length=255, unique=True)
     expiry = models.DateField()
 
     class Meta:

@@ -384,83 +384,129 @@ document.querySelectorAll("td").forEach(td => {
 
 function updateInstrumentTotals() {
 
-  // For EACH total row
-  document.querySelectorAll("tr.instrument-total").forEach(totalRow => {
+    document.querySelectorAll("tr.instrument-total").forEach(totalRow => {
 
-    const table = totalRow.closest("table");   // 🔥 CRITICAL LINE
+    const table = totalRow.closest("table");
     if (!table) return;
 
     const instrument = totalRow.dataset.instrument;
     let sum = 0;
 
-    // ONLY rows inside THIS table
     table.querySelectorAll(
-      `tr[data-instrument="${instrument}"]:not(.instrument-total)`
+        `tr[data-instrument="${instrument}"]:not(.instrument-total)`
     ).forEach(row => {
 
-      const pnlSpan = row.querySelector(".pnl-value");
-      if (!pnlSpan) return;
+        const pnlSpan = row.querySelector(".pnl-value");
+        if (!pnlSpan) return;
 
-      sum += parseFloat(pnlSpan.textContent) || 0;
+        sum += parseFloat(pnlSpan.textContent) || 0;
     });
 
+    // OPEN PNL
     const totalSpan = totalRow.querySelector(".pnl-total");
+
     if (totalSpan) {
-      totalSpan.textContent = sum.toFixed(2);
+        totalSpan.textContent = sum.toFixed(2);
     }
-    document.querySelectorAll(".pnl-total").forEach(function(el) {
-        let value = parseFloat(el.textContent);
 
-        el.classList.remove("pnl-positive", "pnl-negative"); // reset first
+    // CLOSED PNL (from row)
+    const closedSpan = totalRow.querySelector(".closed-pnl");
+    const closedValue = parseFloat(closedSpan?.textContent) || 0;
 
-        if (value > 0) {
-            el.classList.add("pnl-positive");
-        } else if (value < 0) {
-            el.classList.add("pnl-negative");
+    // OVERALL = OPEN + CLOSED (IMPORTANT PART)
+    const overallValue = sum + closedValue;
+    const overallSpan = totalRow.querySelector(".overall-pnl");
+    if (overallSpan) {
+        overallSpan.textContent = overallValue.toFixed(2);
+
+        overallSpan.classList.remove("pnl-positive", "pnl-negative");
+
+        if (overallValue > 0) {
+            overallSpan.classList.add("pnl-positive");
+        } else if (overallValue < 0) {
+            overallSpan.classList.add("pnl-negative");
         }
-    });
-    
-  });
+    }
+})
 }
 
 function formatSummaryRows() {
+
     const summaryRows = document.querySelectorAll("tr.instrument-total");
 
     summaryRows.forEach(row => {
+
         const cells = Array.from(row.querySelectorAll("td"));
-        if (cells.length !== 10) return;  // Make sure 10 cells as per your table
 
-        // Extract values BEFORE clearing row
+        // 11 columns: index 0 → 10
+        if (cells.length !== 11) return;
+
         const instrumentText = cells[0].textContent.trim();
-        const pnlCell = cells[6].cloneNode(true);  // clone PNL cell with styles
-        const closedValue = cells.slice(7).map(td => td.textContent.trim()).join(" ").replace(/Closed PNL:/gi, "").trim();
 
-        // Clear the row
+        const pnlCell = cells[6].cloneNode(true); // keep as-is
+
+        const closedPnlValue = cells[7].textContent.trim();
+        const overallPnlValue = cells[9].textContent.trim();
+
         row.innerHTML = "";
 
-        // Merge Instrument → LTP (0 to 5)
+        // ======================
+        // 0-5 Instrument block
+        // ======================
         const leftMerged = document.createElement("td");
         leftMerged.colSpan = 6;
         leftMerged.textContent = instrumentText;
         leftMerged.style.fontWeight = "600";
         leftMerged.style.textAlign = "center";
 
-        // Merge Squareoff → SquareOff Strike (7 to 9)
-        const rightMerged = document.createElement("td");
-        rightMerged.colSpan = 3;
-        rightMerged.style.textAlign = "centre";
-        rightMerged.style.fontWeight = "600";
-        rightMerged.textContent = "Closed PNL: " + closedValue;
+        // ======================
+        // 6th column (AS IS)
+        // ======================
+        const pnlCellFinal = pnlCell;
 
-        if (closedValue > 0) {
-            rightMerged.classList.add("pnl-positive");
-        } else if (closedValue < 0) {
-            rightMerged.classList.add("pnl-negative");
+        // ======================
+        // 7-8 Closed PNL
+        // ======================
+        const closedMerged = document.createElement("td");
+        closedMerged.colSpan = 2;
+        closedMerged.textContent = closedPnlValue;
+        closedMerged.style.fontWeight = "600";
+        closedMerged.style.textAlign = "center";
+        closedMerged.classList.add("closed-pnl");
+
+        const closedNum = parseFloat(closedPnlValue) || 0;
+
+        if (closedNum > 0) {
+            closedMerged.classList.add("pnl-positive");
+        } else if (closedNum < 0) {
+            closedMerged.classList.add("pnl-negative");
         }
-        // Append cells in order: left merged, pnl, right merged
+
+        // ======================
+        // 9-10 Overall PNL
+        // ======================
+        const overallMerged = document.createElement("td");
+        overallMerged.colSpan = 2;
+        overallMerged.textContent = overallPnlValue;
+        overallMerged.style.fontWeight = "600";
+        overallMerged.style.textAlign = "center";
+        overallMerged.classList.add("overall-pnl");
+
+        const overallNum = parseFloat(overallPnlValue) || 0;
+
+        if (overallNum > 0) {
+            overallMerged.classList.add("pnl-positive");
+        } else if (overallNum < 0) {
+            overallMerged.classList.add("pnl-negative");
+        }
+
+        // ======================
+        // APPEND IN ORDER
+        // ======================
         row.appendChild(leftMerged);
-        row.appendChild(pnlCell);
-        row.appendChild(rightMerged);
+        row.appendChild(pnlCellFinal);   // untouched column 6
+        row.appendChild(closedMerged);   // 7-8
+        row.appendChild(overallMerged);  // 9-10
     });
 }
 
