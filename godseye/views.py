@@ -1421,7 +1421,7 @@ def positions(req):
                             "Quantitys",
                             "Price",
                             "Side",
-                            "SquareOff",
+                            "Squareoff",
                             "PlaceSL"
                         ]
                     )
@@ -1519,7 +1519,7 @@ def positions(req):
                             )
                             grouped_instrument[group_key].append(squareoff_id)
                             url = reverse('squareoff', kwargs={'id': squareoff_id})
-                            pos["SquareOff"] = (
+                            pos["Squareoff"] = (
                                 f'<form action="{url}" method="POST" style="display:inline;">'
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                                 '<button type="submit" class="squareoff-btn">Sq Off Acc</button>'
