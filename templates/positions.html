@@ -407,11 +407,17 @@ function updateInstrumentTotals() {
 
     if (totalSpan) {
         totalSpan.textContent = sum.toFixed(2);
+        totalSpan.classList.remove("pnl-positive", "pnl-negative");
+        if (sum > 0) {
+            totalSpan.classList.add("pnl-positive");
+        } else if (sum < 0) {
+            totalSpan.classList.add("pnl-negative");
+        }
     }
 
     // CLOSED PNL (from row)
     const closedSpan = totalRow.querySelector(".closed-pnl");
-    const closedValue = parseFloat(closedSpan?.textContent) || 0;
+    const closedValue = parseFloat(closedSpan?.textContent.replace("Closed PNL:", "").trim()) || 0;
 
     // OVERALL = OPEN + CLOSED (IMPORTANT PART)
     const overallValue = sum + closedValue;
