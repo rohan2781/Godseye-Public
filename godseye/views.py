@@ -1689,18 +1689,18 @@ def positions(req):
                     df["Expiry"] = df["Expiry"].astype(str)
 
                     new_grouped = (
-                        df.groupby(["Strike", "Type", "Expiry"])
+                        df.groupby(["Strike", "Type", "Expiry"], group_keys=False)
                         .apply(lambda g: [
                             f"{row.Token}_{key}_{row.Quantity}_{row.Exchange}"
                             for row in g.itertuples(index=False)
-                    ])
-                    .to_dict()
+                        ])
+                        .to_dict()
                     )
                     for group_key, items in new_grouped.items():
                         if group_key in grouped:
                             grouped[group_key].extend(items)
                         else:
-                            grouped[group_key] = items
+                            grouped[group_key] = [items]
 
                     df["Instrument"] = df["Instrument"].astype(str)
                     new_grouped = (
