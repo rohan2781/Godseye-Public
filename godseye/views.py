@@ -1814,7 +1814,7 @@ def positions(req):
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                                 f'<input type="hidden" name="strike" value="{strike}"/>'
                                 f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                                '<button type="submit" class="squareoff-btn">Sq Off Curr Acc</button>'
+                                '<button type="submit" class="squareoff-btn">Position Zero</button>'
                                 '</form>'
                             )
                         return ""
@@ -1951,7 +1951,7 @@ def positions(req):
                                 f'<input type="hidden" name="csrfmiddlewaretoken" value="{csrf_token}"/>'
                                 f'<input type="hidden" name="instrument" value="{instrument}"/>'
                                 f'<input type="hidden" name="data" value=\'{body_json}\'/>'
-                                '<button type="submit" class="squareoff-btn">Sq Off Curr Acc</button>'
+                                '<button type="submit" class="squareoff-btn">Position Zero</button>'
                                 '</form>'
                             )
                         return ""
