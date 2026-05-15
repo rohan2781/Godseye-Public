@@ -717,7 +717,7 @@ def placesl(req):
 def squareoff_group(req):
     try:
     # if req.session.get("logged_in"):
-        strike = req.POST.get("strike")
+        # strike = req.POST.get("strike")
         body_data = json.loads(req.POST.get("data"))
         ## print("Body Data ",body_data)
         masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
