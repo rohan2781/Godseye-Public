@@ -29,6 +29,7 @@ import requests
 import pickle
 import subprocess
 from django.db.models import Q
+from datetime import timezone, timedelta
 
 
 
@@ -271,50 +272,77 @@ def generate_closed_pnl(account_name,symbol):
 
     return df_final
 
+from datetime import datetime, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
+
 def normalize_order(order, account_key):
-    """
-    Convert different order formats into TradeBook-compatible dict
-    """
     kite_instruments = get_instruments_cached("NFO")
     bfo_instruments = get_instruments_cached("BFO")
     kite_instruments['exchange_token'] = kite_instruments['exchange_token'].astype(str)
     bfo_instruments['exchange_token'] = bfo_instruments['exchange_token'].astype(str)
+
     if 'jainam' in account_key:
-        if order['ExchangeSegment']=='NSEFO':
-            expiry = kite_instruments.loc[kite_instruments['exchange_token'] == str(order['ExchangeInstrumentID']),'expiry'].values[0]
+        if order['ExchangeSegment'] == 'NSEFO':
+            expiry = kite_instruments.loc[
+                kite_instruments['exchange_token'] == str(order['ExchangeInstrumentID']), 'expiry'
+            ].values[0]
         else:
-            expiry = bfo_instruments.loc[bfo_instruments['exchange_token'] == str(order['ExchangeInstrumentID']),'expiry'].values[0]
+            expiry = bfo_instruments.loc[
+                bfo_instruments['exchange_token'] == str(order['ExchangeInstrumentID']), 'expiry'
+            ].values[0]
+
+        # Jainam sends IST string — parse, mark as IST, strip tz for PG naive column
+        trade_time = (
+            datetime.strptime(order["OrderGeneratedDateTime"], "%d-%m-%Y %H:%M:%S")
+            .replace(tzinfo=IST)
+            .replace(tzinfo=None)
+        )
+
         return {
-            "orderId": order["AppOrderID"],
-            "tradeTime": datetime.strptime(order["OrderGeneratedDateTime"], "%d-%m-%Y %H:%M:%S"),
-            "accountId": account_key,
-            "instrument": order["ExchangeInstrumentID"],
-            "symbol":order['TradingSymbol'],
-            "side": order["OrderSide"],
-            "price": order["OrderAverageTradedPrice"],
-            "qty": order["OrderQuantity"],
-            "finalPrice": float(float(order["OrderAverageTradedPrice"])*float(order["OrderQuantity"])),
-            "expiry":expiry
-        }
-    else:
-        # non-jainam structure
-        if order['exchange']=='NFO':
-            expiry = kite_instruments.loc[kite_instruments['exchange_token'] == str(order['instrument_token']),'expiry'].values[0]
-        else:
-            expiry = bfo_instruments.loc[bfo_instruments['exchange_token'] == str(order['instrument_token']),'expiry'].values[0]
-        return {
-            "orderId": order["oms_order_id"],
-            "tradeTime": datetime.fromtimestamp(int(order['order_entry_time'])),
-            "accountId": account_key,
-            "instrument": order["instrument_token"],
-            "symbol":order['trading_symbol'],
-            "side": order["order_side"],
-            "price": order["average_price"],
-            "qty": order["quantity"],
-            "finalPrice": float(float(order["average_price"])*float(order["quantity"])),
-            "expiry":expiry
+            "orderId":     str(order["AppOrderID"]).strip(),
+            "tradeTime":   trade_time,
+            "accountId":   account_key,
+            "instrument":  order["ExchangeInstrumentID"],
+            "symbol":      order["TradingSymbol"],
+            "side":        order["OrderSide"],
+            "price":       order["OrderAverageTradedPrice"],
+            "qty":         order["OrderQuantity"],
+            "finalPrice":  float(order["OrderAverageTradedPrice"]) * float(order["OrderQuantity"]),
+            "expiry":      expiry,
         }
 
+    else:
+        # Mastertrust (non-jainam)
+        if order['exchange'] == 'NFO':
+            expiry = kite_instruments.loc[
+                kite_instruments['exchange_token'] == str(order['instrument_token']), 'expiry'
+            ].values[0]
+        else:
+            expiry = bfo_instruments.loc[
+                bfo_instruments['exchange_token'] == str(order['instrument_token']), 'expiry'
+            ].values[0]
+
+        # Mastertrust sends epoch (UTC) — convert to IST, strip tz for PG naive column
+        trade_time = (
+            datetime.fromtimestamp(int(order['order_entry_time']), tz=timezone.utc)
+            .astimezone(IST)
+            .replace(tzinfo=None)
+        )
+
+        return {
+            "orderId":     str(order["oms_order_id"]).strip(),
+            "tradeTime":   trade_time,
+            "accountId":   account_key,
+            "instrument":  order["instrument_token"],
+            "symbol":      order["trading_symbol"],
+            "side":        order["order_side"],
+            "price":       order["average_price"],
+            "qty":         order["quantity"],
+            "finalPrice":  float(order["average_price"]) * float(order["quantity"]),
+            "expiry":      expiry,
+        }
+    
 def fetch_and_insert_orders(account_key, client):
     try:
         # Safe DB handling for threads
