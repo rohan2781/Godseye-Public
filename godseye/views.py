@@ -28,6 +28,8 @@ from .models import *
 import requests
 import pickle
 import subprocess
+from django.db.models import Q
+
 
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
@@ -166,6 +168,9 @@ def generate_closed_pnl(account_name,symbol):
     trades = (
         TradeBook.objects
         .filter(accountId=account_name,symbol__istartswith=symbol.upper())
+        .exclude(
+            Q(qty=0) | Q(price=0)
+        )
         .order_by('instrument', 'tradeTime')
         .values(
             'instrument',
