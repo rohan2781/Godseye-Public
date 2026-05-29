@@ -1729,6 +1729,10 @@ def positions(req):
                         ])
                         .to_dict()
                     )
+                    grouped = {
+                        k: v for k, v in grouped.items()
+                        if isinstance(v, list)
+                    }
                     for group_key, items in new_grouped.items():
                         if group_key in grouped:
                             grouped[group_key].extend(items)
