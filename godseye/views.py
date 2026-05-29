@@ -1733,7 +1733,7 @@ def positions(req):
                         if group_key in grouped:
                             grouped[group_key].extend(items)
                         else:
-                            grouped[group_key] = [items]
+                            grouped[group_key] = items
 
                     df["Instrument"] = df["Instrument"].astype(str)
                     new_grouped = (
