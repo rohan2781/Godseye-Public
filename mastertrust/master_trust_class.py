@@ -328,16 +328,16 @@ class MasterTrustUser:
             order['client_id'] = self.username
             order['quantity'] = abs(order['quantity'])
             order_req = requests.post(self.return_url('place_order'),headers=self.get_authorization_header(),data=order)
-            try:
-                response_data = order_req.json()
-                APILogs.objects.create(
-                    api_name='place_order',
-                    request_payload=order,
-                    response_payload=response_data,
-                    # status_code=order_req.status_code
-                )
-            except:
-                pass
+            # try:
+            #     response_data = order_req.json()
+            #     APILogs.objects.create(
+            #         api_name='place_order',
+            #         request_payload=order,
+            #         response_payload=response_data,
+            #         # status_code=order_req.status_code
+            #     )
+            # except:
+            #     pass
             return json.loads(order_req.text)
         except Exception as e:
             try:
