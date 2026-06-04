@@ -11,7 +11,7 @@ from mastertrust.helper import initialize
 from requests_oauthlib import OAuth2Session
 import zipfile
 import io
-
+from godseye.models import *
 
 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
@@ -324,12 +324,32 @@ class MasterTrustUser:
         #     "validity": "DAY",
         #     "user_order_id": "1012910"
         # }
-        order['client_id'] = self.username
-        order['quantity'] = abs(order['quantity'])
-        order_req = requests.post(self.return_url('place_order'),headers=self.get_authorization_header(),data=order)    
-
-        #print(json.loads(order_req.text))
-        return json.loads(order_req.text)
+        try:
+            order['client_id'] = self.username
+            order['quantity'] = abs(order['quantity'])
+            order_req = requests.post(self.return_url('place_order'),headers=self.get_authorization_header(),data=order)
+            try:
+                response_data = order_req.json()
+                APILogs.objects.create(
+                    api_name='place_order',
+                    request_payload=order,
+                    response_payload=response_data,
+                    # status_code=order_req.status_code
+                )
+            except:
+                pass
+            return json.loads(order_req.text)
+        except Exception as e:
+            try:
+                response_data = order_req.json()
+                APILogs.objects.create(
+                    api_name='place_order',
+                    request_payload=order,
+                    response_payload=e,
+                )
+            except:
+                pass
+            return None
 
 
     def cancel_order_id(self,order_id):

@@ -52,3 +52,14 @@ class Accounts(models.Model):
         app_label = 'godseye'
     
 
+class APILogs(models.Model):
+    api_name = models.CharField(max_length=100)
+    request_payload = models.JSONField()
+    response_payload = models.JSONField(null=True, blank=True)
+    status_code = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'APILogs'
+        managed = False  # important: existing table
+        app_label = 'godseye'
