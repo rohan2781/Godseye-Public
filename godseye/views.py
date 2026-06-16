@@ -30,7 +30,7 @@ import pickle
 import subprocess
 from django.db.models import Q
 from datetime import timezone, timedelta
-
+import csv
 
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
@@ -38,6 +38,20 @@ r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 instrument_cache={}
 positions_data=[]
 
+def dbdata(req):
+    try:
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="TradeBook.csv"'
+        writer = csv.writer(response)
+
+        fields = [f.name for f in TradeBook._meta.fields]
+        writer.writerow(fields)
+        for obj in TradeBook.objects.all().values_list(*fields):
+            writer.writerow(obj)
+        return response
+    except Exception as e:
+        messages.info(req, 'Error Downloading Data')
+        return redirect('home')
 
 def restart_ws_service(req):
     if platform.system()!='Windows':

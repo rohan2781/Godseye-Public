@@ -35,5 +35,6 @@ urlpatterns = [
     path('placesl',views.placesl,name='placesl'),
     path('cancelsl',views.cancelsl,name='cancelsl'),
     path('restart',views.restart_ws_service,name='restart'),
+    path('dbdata',views.dbdata,name='dbdata'),
 
 ]
