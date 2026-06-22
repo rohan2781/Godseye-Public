@@ -366,13 +366,24 @@ def fetch_and_insert_orders(account_key, client):
         if 'jainam' not in account_key.lower():
             try:
                 orders = client.get_orders('completed')
+                orders = orders[
+                    (orders["order_status"].astype(str).str.lower() == "complete") &
+                    (orders["trading_symbol"].astype(str).str.upper().str.startswith(
+                        ("NIFTY", "BANKNIFTY", "SENSEX")
+                    ))
+                ]
             except:
                 orders=pd.DataFrame()
         else:
             try:
                 orders_dict = client.get_order_book()
                 df_orders = pd.DataFrame(orders_dict["result"])
-                orders = df_orders[df_orders["OrderStatus"] == "Filled"].reset_index(drop=True)
+                orders = df_orders[
+                    (df_orders["OrderStatus"] == "Filled") &
+                    (df_orders["TradingSymbol"].astype(str).str.upper().str.startswith(
+                        ("NIFTY", "BANKNIFTY", "SENSEX")
+                    ))
+                ].reset_index(drop=True)
             except:
                 orders=pd.DataFrame()
 
@@ -390,28 +401,18 @@ def fetch_and_insert_orders(account_key, client):
 
             normalized_orders.append(normalized)
 
-        # 3️⃣ Remove duplicates from CURRENT API response
-        unique_orders = {}
-        for order in normalized_orders:
-            unique_orders[order["orderId"]] = order
-
-        unique_order_ids = set(unique_orders.keys())
-
-        # 4️⃣ Fetch only relevant existing IDs from DB
-        existing_ids = set(
+        # Only for DB lookup
+        trade_times = {order["tradeTime"] for order in normalized_orders}
+        existing_trade_times = set(
             TradeBook.objects.filter(
-                orderId__in=unique_order_ids
-            ).values_list("orderId", flat=True)
+                tradeTime__in=trade_times
+            ).values_list("tradeTime", flat=True)
         )
-
-        # Normalize DB ids too
-        existing_ids = {str(x).strip() for x in existing_ids}
-
-        # 5️⃣ Prepare rows that don't exist
         new_rows = []
 
-        for order_id, order_data in unique_orders.items():
-            if order_id not in existing_ids:
+        # Iterate original normalized_orders, not a deduplicated version
+        for order_data in normalized_orders:
+            if order_data["tradeTime"] not in existing_trade_times:
                 new_rows.append(TradeBook(**order_data))
 
         # 6️⃣ Bulk insert
