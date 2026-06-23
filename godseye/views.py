@@ -98,32 +98,49 @@ def login_required(view_func):
 
     return _wrapped_view
 
-def maybe_start_account_jobs(masterclass_dict):
-    now = time.time()
-
+@login_required
+def notetrades(req):
     try:
-        last_run = r.get("account_jobs_last_run")
-        if last_run and now - float(last_run) < 60:  # every 300 sec
-            return
-
-        # distributed lock (multi-worker safe)
-        if not r.set("account_jobs_lock", 1, nx=True, ex=55):
-            return
-    except:
-        pass
-
-    try:
+        masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
         for key in masterclass_dict:
             start_background_job(key, masterclass_dict[key])
-        
-                # Get today's date
+        messages.info(req,'Trades Noting Started')
+        return redirect('home')
+    except:
+        messages.info(req,'TradeBook Fetch Failed')
+
+def maybe_start_account_jobs(masterclass_dict):
+    try:
             today = date.today()
             # Filter rows with expiry date less than today and delete them
             TradeBook.objects.filter(expiry__lt=today).delete()
+    except:
+        pass
+    # now = time.time()
 
-        r.set("account_jobs_last_run", now)
-    finally:
-        r.delete("account_jobs_lock")
+    # try:
+    #     last_run = r.get("account_jobs_last_run")
+    #     if last_run and now - float(last_run) < 60:  # every 300 sec
+    #         return
+
+    #     # distributed lock (multi-worker safe)
+    #     if not r.set("account_jobs_lock", 1, nx=True, ex=55):
+    #         return
+    # except:
+    #     pass
+
+    # try:
+    #     for key in masterclass_dict:
+    #         start_background_job(key, masterclass_dict[key])
+        
+    #             # Get today's date
+    #         today = date.today()
+    #         # Filter rows with expiry date less than today and delete them
+    #         TradeBook.objects.filter(expiry__lt=today).delete()
+
+    #     r.set("account_jobs_last_run", now)
+    # finally:
+    #     r.delete("account_jobs_lock")
 
 def get_contracts():
     current_folder = os.path.dirname(os.path.abspath(__file__))
@@ -389,7 +406,7 @@ def fetch_and_insert_orders(account_key, client):
 
         if orders.empty:
             return
-
+    
         # 2️⃣ Normalize all rows first
         normalized_orders = []
 
