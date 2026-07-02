@@ -422,6 +422,7 @@ def fetch_and_insert_orders(account_key, client):
         trade_times = {order["tradeTime"] for order in normalized_orders}
         existing_trade_times = set(
             TradeBook.objects.filter(
+                accountId=account_key.lower(),
                 tradeTime__in=trade_times
             ).values_list("tradeTime", flat=True)
         )
