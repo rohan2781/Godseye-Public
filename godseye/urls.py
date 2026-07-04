@@ -36,6 +36,6 @@ urlpatterns = [
     path('cancelsl',views.cancelsl,name='cancelsl'),
     path('restart',views.restart_ws_service,name='restart'),
     path('dbdata',views.dbdata,name='dbdata'),
-    path('notetrades',views.notetrades,name='notetrades'),
+    # path('notetrades',views.notetrades,name='notetrades'),
 
 ]
