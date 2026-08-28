@@ -3,6 +3,8 @@ import os
 from django.conf import settings
 import pandas as pd
 from jainam.JConnect import XTSConnect as JXTSConnect
+from jainam.MConnect import XTSConnect as MXTSConnect
+# from jainam.mlbconnect import XTSConnect as MLBConnect
 import websocket
 import threading
 import time
@@ -60,7 +62,11 @@ def _load_accounts():
     # accounts = accounts[accounts["Enabled"] == "yes"]
     for _, row in accounts.iterrows():
         if 'jainam' in row['name'].lower():
-            xt = JXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
+            if 'master' in row['name'].lower():
+                xt = MXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
+            else:
+                xt = JXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
+
             xt.hostlookup_login()
             xt.interactive_login()
             # masterclass_instance = xt
