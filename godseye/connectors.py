@@ -4,7 +4,7 @@ from django.conf import settings
 import pandas as pd
 from jainam.JConnect import XTSConnect as JXTSConnect
 from jainam.MConnect import XTSConnect as MXTSConnect
-# from jainam.mlbconnect import XTSConnect as MLBConnect
+from jainam.mlbConnect import XTSConnect as MLBXTSConnect
 import websocket
 import threading
 import time
@@ -64,6 +64,8 @@ def _load_accounts():
         if 'jainam' in row['name'].lower():
             if 'master' in row['name'].lower():
                 xt = MXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
+            elif 'mlb' in row['name'].lower():
+                xt = MLBXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
             else:
                 xt = JXTSConnect(row['appId'], row['appSecret'], "WEBAPI")
 
