@@ -98,16 +98,6 @@ def login_required(view_func):
 
     return _wrapped_view
 
-# @login_required
-# def notetrades(req):
-#     try:
-#         masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
-#         for key in masterclass_dict:
-#             start_background_job(key, masterclass_dict[key])
-#         messages.info(req,'Trades Noting Started')
-#         return redirect('home')
-#     except:
-#         messages.info(req,'TradeBook Fetch Failed')
 
 def maybe_start_account_jobs(masterclass_dict):
     # try:
@@ -380,7 +370,7 @@ def fetch_and_insert_orders(account_key, client):
         close_old_connections()
 
         # 1️⃣ Fetch orders (API call in thread)
-        if 'jainam' not in account_key.lower():
+        if 'master' in account_key.lower() or 'jainam' not in account_key.lower():
             try:
                 orders = client.get_orders('completed')
                 orders = orders[
@@ -401,7 +391,7 @@ def fetch_and_insert_orders(account_key, client):
                         ("NIFTY", "BANKNIFTY", "SENSEX")
                     ))
                 ].reset_index(drop=True)
-            except:
+            except Exception as e:
                 orders=pd.DataFrame()
 
         if orders.empty:
