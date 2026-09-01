@@ -370,7 +370,7 @@ def fetch_and_insert_orders(account_key, client):
         close_old_connections()
 
         # 1️⃣ Fetch orders (API call in thread)
-        if 'master' in account_key.lower() or 'jainam' not in account_key.lower():
+        if 'jainam' not in account_key.lower():
             try:
                 orders = client.get_orders('completed')
                 orders = orders[
@@ -381,6 +381,19 @@ def fetch_and_insert_orders(account_key, client):
                 ]
             except:
                 orders=pd.DataFrame()
+        elif 'master' in account_key.lower():
+            try:
+                orders_dict = client.get_order_book('NSPSK29')
+                df_orders = pd.DataFrame(orders_dict["result"])
+                orders = df_orders[
+                    (df_orders["OrderStatus"] == "Filled") &
+                    (df_orders["TradingSymbol"].astype(str).str.upper().str.startswith(
+                        ("NIFTY", "BANKNIFTY", "SENSEX")
+                    ))
+                ].reset_index(drop=True)
+            except Exception as e:
+                orders=pd.DataFrame()
+        
         else:
             try:
                 orders_dict = client.get_order_book()
