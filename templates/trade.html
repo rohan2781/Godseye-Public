@@ -327,10 +327,10 @@
       <div class="clients-container">
         <h5>Clients</h5>
         <div id="clients-area" class="client-row">
-          {% for client in clients %}
+          {% for client, account_display in clients %}
           <div class="client-box">
             <input type="checkbox" name="client_check_{{client}}" class="client-check" checked>
-            <label>{{ client }}</label>
+            <label>{{ account_display }}</label>
             <input type="number" name="client_qty_{{client}}" value="1" min="0">
           </div>
           {% endfor %}

@@ -2432,15 +2432,14 @@ def home(req):
             # for key in masterclass_dict:
             #     start_background_job(key, masterclass_dict[key])
 
-            client_display = zip(clients, accounts_display)
-
-            # return render(req, 'trade.html', {
-            #     "expiries_dict": json.dumps(experies),
-            #     "clients": client_display,
-            # })
-            return render(req,'trade.html',{
-                "expiries_dict": json.dumps(experies),  # must be JSON string
-            'clients':clients})
+            client_display = list(zip(clients, accounts_display))
+            return render(req, 'trade.html', {
+                "expiries_dict": json.dumps(experies),
+                "clients": client_display,
+            })
+            # return render(req,'trade.html',{
+            #     "expiries_dict": json.dumps(experies),  # must be JSON string
+            # 'clients':clients})
     except:
         messages.info(req,'Error Occured')
         return redirect('/home')
