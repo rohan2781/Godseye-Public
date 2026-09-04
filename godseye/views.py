@@ -2136,10 +2136,11 @@ def positions(req):
                 arr.append(html)
                 client_list.append(key)
 
-            
+
             # print('Listing')
             # print(client_list)
-            rows = zip(client_list, arr)
+
+            rows = zip(client_list, arr, list(accounts_display))
 
             return render(req,"positions.html",{'header':"true",'rows':rows})
         # else:
