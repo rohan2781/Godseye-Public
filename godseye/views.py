@@ -1976,7 +1976,8 @@ def positions(req):
                         flags=re.S
                     )
                 arr.append(html)
-                client_list.append(key)
+                value = next((account for account in accounts_display if account.lower() in key.lower()),None)
+                client_list.append(value)
             
 
 
@@ -2134,13 +2135,15 @@ def positions(req):
                     )
 
                 arr.append(html)
-                client_list.append(key)
+                value = next((account for account in accounts_display if account.lower() in key.lower()),None)
+                client_list.append(value)
+
 
 
             # print('Listing')
             # print(client_list)
 
-            rows = zip(client_list, arr, list(accounts_display))
+            rows = zip(client_list, arr)
 
             return render(req,"positions.html",{'header':"true",'rows':rows})
         # else:
