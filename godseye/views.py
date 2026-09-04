@@ -558,7 +558,7 @@ def get_ltp(req):
 @login_required
 def cancelsl(req):
     try:
-        masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+        masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
         body = json.loads(req.body)
         # Extract sl_metadata from the parsed JSON data
         metadata = body.get('sl_metadata')
@@ -626,7 +626,7 @@ def placesl(req):
         # if req.session.get("logged_in"):
         # if r.get('logged_in')=='1':
         if req.method == 'POST':
-            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+            masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -789,7 +789,7 @@ def squareoff_group(req):
         # strike = req.POST.get("strike")
         body_data = json.loads(req.POST.get("data"))
         ## print("Body Data ",body_data)
-        masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+        masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
         t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -1009,7 +1009,7 @@ def squareoff(req,id):
     try:
         # if req.session.get("logged_in"):
         # if r.get('logged_in')=='1':
-            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+            masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -1250,7 +1250,7 @@ def pnl(req):
                 bfo_instruments = pd.DataFrame(bfo_instruments)
                 bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
                 bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-                masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+                masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
                 t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -1442,7 +1442,7 @@ def positions(req):
             bfo_instruments = get_instruments_cached("BFO")
             bfo_instruments = bfo_instruments[bfo_instruments["segment"] == "BFO-OPT"]
             bfo_instruments = bfo_instruments[bfo_instruments["name"] == "SENSEX"]
-            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+            masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -2161,7 +2161,7 @@ def home(req):
             #     t.start()
             if platform.system()!='Windows':
                 subprocess.run(["sudo", "systemctl", "start", "ws.service"], check=True)
-            masterclass_dict, clients, jainam_user_ids = master_connection(req.user)
+            masterclass_dict, clients, jainam_user_ids, accounts_display = master_connection(req.user)
             t = Thread(
                 target=maybe_start_account_jobs,
                 args=(masterclass_dict,),
@@ -2432,7 +2432,12 @@ def home(req):
             # for key in masterclass_dict:
             #     start_background_job(key, masterclass_dict[key])
 
+            client_display = zip(clients, accounts_display)
 
+            # return render(req, 'trade.html', {
+            #     "expiries_dict": json.dumps(experies),
+            #     "clients": client_display,
+            # })
             return render(req,'trade.html',{
                 "expiries_dict": json.dumps(experies),  # must be JSON string
             'clients':clients})
