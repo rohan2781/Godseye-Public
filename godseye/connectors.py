@@ -42,13 +42,15 @@ def master_connection(user):
     masterclass_dict={}
     jainam_user_ids={}
     accounts_global=[]
+    accounts_display=[]
 
     accounts = Accounts.objects.filter(users__contains=user,enabled__iexact='yes')
     for account in accounts:
         masterclass_dict[account.name]=pickle.loads(account.master_class_instance_data)
         accounts_global.append(account.name)
         jainam_user_ids[account.name]=account.userId
-    return masterclass_dict, accounts_global, jainam_user_ids
+        accounts_display.append(account.displayName)
+    return masterclass_dict, accounts_global, jainam_user_ids, accounts_display
 
     
 def _load_accounts():

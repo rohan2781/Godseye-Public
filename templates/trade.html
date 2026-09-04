@@ -327,7 +327,7 @@
       <div class="clients-container">
         <h5>Clients</h5>
         <div id="clients-area" class="client-row">
-          {% for client in clients %}
+          {% for client, account_display in clients %}
           <div class="client-box">
             <input type="checkbox" name="client_check_{{client}}" class="client-check" checked>
             <label>{{ client }}</label>

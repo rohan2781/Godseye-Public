@@ -45,6 +45,7 @@ class Accounts(models.Model):
     ROC = models.DecimalField(max_digits=20, decimal_places=8, null=True, blank=True)
     master_class_instance_data = models.BinaryField(null=True, blank=True)  # This will hold serialized data of the class instance
     users=models.TextField()
+    displayName=models.TextField(null=False)
 
     class Meta:
         db_table = 'Accounts'
