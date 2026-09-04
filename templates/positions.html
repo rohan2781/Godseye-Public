@@ -240,7 +240,7 @@ table th {
 {% for client, table, account_display in rows %}
 <div class="client-card">
 
-    <div class="client-title">{{ account_display }}</div>
+    <div class="client-title">{{ client }}</div>
 
     <div class="table-wrapper">
         {{ table|safe }}
