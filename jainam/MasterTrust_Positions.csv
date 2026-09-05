@@ -1,3 +1,0 @@
-,average_buy_price,average_sell_price,buy_amount,buy_quantity,cf_buy_amount,cf_buy_quantity,cf_sell_amount,cf_sell_quantity,client_id,exchange,instrument_token,ltp,multiplier,net_amount,net_quantity,previous_close,prod_type,product,realized_mtm,segment,sell_amount,sell_quantity,symbol,token,trading_symbol
-0,35.9,0.0,1256.5,35,0.0,0,0.0,0,6DIT02,NFO,52975,34.3,1,-1256.5,35,27.6,NRML,NRML,0.0,,0.0,0,BANKNIFTY,52975,BANKNIFTY25OCT53000PE
-1,95.35,0.0,3337.25,35,0.0,0,0.0,0,6DIT02,NFO,53155,115.0,1,-3337.25,35,109.4,NRML,NRML,0.0,,0.0,0,BANKNIFTY,53155,BANKNIFTY25OCT58000CE
